@@ -7,8 +7,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AnalysisDao {
-    @Query("SELECT id, timestamp, label, beforeFileName, afterFileName, resultFileName, changedPct, changedPixels, regions FROM analysis_history ORDER BY timestamp DESC")
+    @Query("SELECT * FROM analysis_history ORDER BY timestamp DESC")
     fun getAllHistory(): Flow<List<AnalysisEntity>>
+
+    @Query("SELECT * FROM analysis_history WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Int): AnalysisEntity?
 
     @Insert
     suspend fun insert(analysis: AnalysisEntity)

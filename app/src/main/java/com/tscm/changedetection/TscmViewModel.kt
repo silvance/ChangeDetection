@@ -71,6 +71,11 @@ class TscmViewModel : ViewModel() {
     // when set, same as how the web app's state.Store works.
     private var warpedBeforeBytes: ByteArray? = null
 
+    // The point pairs that produced the active warp, retained so saved scans
+    // can record exactly which alignment was applied.
+    private var warpSrcJson: String? = null
+    private var warpDstJson: String? = null
+
     // Preview bitmaps shown in the capture UI (decoded once on capture)
     private val _beforeBitmap = MutableStateFlow<Bitmap?>(null)
     val beforeBitmap: StateFlow<Bitmap?> = _beforeBitmap.asStateFlow()
@@ -116,6 +121,8 @@ class TscmViewModel : ViewModel() {
         val processedBytes = if (stripMetadata) stripExif(jpegBytes) else jpegBytes
         _beforeBytes.value = processedBytes
         warpedBeforeBytes = null // clear any previous warp
+        warpSrcJson = null
+        warpDstJson = null
         _analysisState.value = AnalysisState.Idle
         _alternateState.value = AlternateState.Idle
 
@@ -129,6 +136,8 @@ class TscmViewModel : ViewModel() {
         val processedBytes = if (stripMetadata) stripExif(jpegBytes) else jpegBytes
         _afterBytes.value = processedBytes
         warpedBeforeBytes = null
+        warpSrcJson = null
+        warpDstJson = null
         _analysisState.value = AnalysisState.Idle
         _alternateState.value = AlternateState.Idle
 
@@ -268,6 +277,10 @@ class TscmViewModel : ViewModel() {
             }
 
             warpedBeforeBytes = warpedResult?.first
+            if (warpedBeforeBytes != null) {
+                warpSrcJson = srcPtsJson
+                warpDstJson = dstPtsJson
+            }
             _analysisState.value = AnalysisState.Idle  // force re-run with new warp
             onComplete(warpedResult?.second)
         }
@@ -275,6 +288,8 @@ class TscmViewModel : ViewModel() {
 
     fun clearWarp() {
         warpedBeforeBytes = null
+        warpSrcJson = null
+        warpDstJson = null
         _analysisState.value = AnalysisState.Idle
     }
 
@@ -293,11 +308,30 @@ class TscmViewModel : ViewModel() {
             withContext(Dispatchers.Main) {
                 _beforeBytes.value = before
                 _afterBytes.value = after
+                // Restore the alignment that was used so the user can see it
+                // was active. We don't auto re-warp here — the saved result
+                // bitmap is authoritative; if the user re-aligns and re-runs,
+                // they'll start from a known state.
                 warpedBeforeBytes = null
-                
+                warpSrcJson = entity.warpSrcJson
+                warpDstJson = entity.warpDstJson
+
+                // Restore the parameters used for this scan so further
+                // analysis on this evidence reproduces the same numbers.
+                strength = entity.strength
+                morphSize = entity.morphSize
+                closeSize = entity.closeSize
+                minRegion = entity.minRegion
+                preBlurSigma = entity.preBlurSigma
+                normalizeLuma = entity.normalizeLuma
+                highlightR = entity.highlightR
+                highlightG = entity.highlightG
+                highlightB = entity.highlightB
+                highlightAlpha = entity.highlightAlpha
+
                 _beforeBitmap.value = beforeBmp
                 _afterBitmap.value = afterBmp
-                
+
                 if (resultBmp != null) {
                     _analysisState.value = AnalysisState.Success(
                         highlightBitmap = resultBmp,
@@ -342,7 +376,19 @@ class TscmViewModel : ViewModel() {
                 resultFileName = resultName,
                 changedPct = pct,
                 changedPixels = pixels,
-                regions = regions
+                regions = regions,
+                strength = strength,
+                morphSize = morphSize,
+                closeSize = closeSize,
+                minRegion = minRegion,
+                preBlurSigma = preBlurSigma,
+                normalizeLuma = normalizeLuma,
+                highlightR = highlightR,
+                highlightG = highlightG,
+                highlightB = highlightB,
+                highlightAlpha = highlightAlpha,
+                warpSrcJson = warpSrcJson,
+                warpDstJson = warpDstJson
             )
             db.analysisDao().insert(entity)
             _saveStatus.value = true
@@ -447,6 +493,32 @@ class TscmViewModel : ViewModel() {
         }
     }
 
-    private fun decodeBitmap(bytes: ByteArray): Bitmap? =
-        runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+    /**
+     * Decodes bytes into a bitmap **for display only**, sub-sampled to roughly
+     * [PREVIEW_MAX_DIM] on the long side. The original bytes are still held
+     * untouched in the StateFlows and are what the Go analysis library reads,
+     * so we don't lose precision where it matters — we only avoid keeping
+     * 50–200 MB ARGB bitmaps in memory for the on-screen previews.
+     */
+    private fun decodeBitmap(bytes: ByteArray): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return@runCatching null
+
+        var sample = 1
+        val maxDim = maxOf(w, h)
+        while (maxDim / (sample * 2) >= PREVIEW_MAX_DIM) sample *= 2
+
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+    }.getOrNull()
+
+    private companion object {
+        // Long-side cap for preview bitmaps. Anything beyond this is invisible
+        // detail on a phone screen and a fast path to OOM on big-sensor shots.
+        const val PREVIEW_MAX_DIM = 2048
+    }
 }
