@@ -399,10 +399,18 @@ class TscmViewModel : ViewModel() {
         _saveStatus.value = null
     }
 
+    /**
+     * Builds an "Evidence Pack v1" zip — a single file containing
+     * manifest.json + before.jpg + after.jpg (+ result.png) — and surfaces
+     * its content URI in [exportUris]. The PixelSentinel desktop server
+     * accepts the same zip at POST /api/v1/import/pack, and any other
+     * channel (AirDrop, USB, email) works equally well because there's
+     * just one self-describing file to send.
+     */
     fun exportAnalysis(context: Context, label: String) {
         val state = _analysisState.value
         if (state !is AnalysisState.Success) return
-        
+
         val before = _beforeBytes.value ?: return
         val after = _afterBytes.value ?: return
 
@@ -410,33 +418,133 @@ class TscmViewModel : ViewModel() {
             try {
                 val cachePath = File(context.cacheDir, "analysis_export")
                 cachePath.mkdirs()
-                
-                // Clear old exports
                 cachePath.listFiles()?.forEach { it.delete() }
 
-                val uris = mutableListOf<Uri>()
-                val timestamp = label.replace(" ", "_")
+                val safeLabel = label.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "scan" }
+                val timestamp = System.currentTimeMillis()
+                val zipFile = File(cachePath, "${safeLabel}_${timestamp}.pixelsentinel.zip")
 
-                // 1. Export Analysis Result
-                val resFile = File(cachePath, "REPORT_${timestamp}_RESULT.png")
-                FileOutputStream(resFile).use { state.highlightBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", resFile))
+                val resultPng = java.io.ByteArrayOutputStream().use {
+                    state.highlightBitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    it.toByteArray()
+                }
 
-                // 2. Export Before Photo
-                val beforeFile = File(cachePath, "REPORT_${timestamp}_BEFORE.jpg")
-                FileOutputStream(beforeFile).use { it.write(before) }
-                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", beforeFile))
+                writeEvidencePack(
+                    out = zipFile,
+                    label = label,
+                    capturedAtMs = timestamp,
+                    stats = state,
+                    beforeJpg = before,
+                    afterJpg = after,
+                    resultPng = resultPng
+                )
 
-                // 3. Export After Photo
-                val afterFile = File(cachePath, "REPORT_${timestamp}_AFTER.jpg")
-                FileOutputStream(afterFile).use { it.write(after) }
-                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", afterFile))
-
-                _exportUris.value = uris
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    zipFile
+                )
+                _exportUris.value = listOf(uri)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+    }
+
+    private fun writeEvidencePack(
+        out: File,
+        label: String,
+        capturedAtMs: Long,
+        stats: AnalysisState.Success,
+        beforeJpg: ByteArray,
+        afterJpg: ByteArray,
+        resultPng: ByteArray?
+    ) {
+        val isoTimestamp = java.text.SimpleDateFormat(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            java.util.Locale.US
+        ).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.format(java.util.Date(capturedAtMs))
+
+        val manifest = buildManifestJson(
+            label = label,
+            capturedAtIso = isoTimestamp,
+            stats = stats,
+            includeResult = resultPng != null
+        )
+
+        java.util.zip.ZipOutputStream(out.outputStream().buffered()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            zip.write(manifest.toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+
+            zip.putNextEntry(java.util.zip.ZipEntry("before.jpg"))
+            zip.write(beforeJpg)
+            zip.closeEntry()
+
+            zip.putNextEntry(java.util.zip.ZipEntry("after.jpg"))
+            zip.write(afterJpg)
+            zip.closeEntry()
+
+            if (resultPng != null) {
+                zip.putNextEntry(java.util.zip.ZipEntry("result.png"))
+                zip.write(resultPng)
+                zip.closeEntry()
+            }
+        }
+    }
+
+    private fun buildManifestJson(
+        label: String,
+        capturedAtIso: String,
+        stats: AnalysisState.Success,
+        includeResult: Boolean
+    ): String {
+        // Inlined to avoid pulling in another JSON dependency for one struct.
+        // org.json.JSONObject is available on Android out of the box but
+        // produces unstable key order; we want a stable, hash-friendly form.
+        fun esc(s: String): String = s
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+
+        val warpJson = if (warpSrcJson != null && warpDstJson != null) {
+            ""","warp":{"src":${warpSrcJson},"dst":${warpDstJson}}"""
+        } else ""
+
+        val resultEntry = if (includeResult) ""","result":"result.png"""" else ""
+
+        return """{
+  "version": 1,
+  "label": "${esc(label)}",
+  "capturedAt": "$capturedAtIso",
+  "source": "phone:android",
+  "stats": {
+    "changedPct": ${stats.changedPct},
+    "changedPixels": ${stats.changedPixels},
+    "regions": ${stats.regions}
+  },
+  "params": {
+    "strength": $strength,
+    "morphSize": $morphSize,
+    "closeSize": $closeSize,
+    "minRegion": $minRegion,
+    "preBlurSigma": $preBlurSigma,
+    "normalizeLuma": $normalizeLuma,
+    "highlightR": $highlightR,
+    "highlightG": $highlightG,
+    "highlightB": $highlightB,
+    "highlightAlpha": $highlightAlpha
+  }$warpJson,
+  "files": {
+    "before": "before.jpg",
+    "after": "after.jpg"$resultEntry
+  }
+}
+"""
     }
 
     fun resetExportUris() {

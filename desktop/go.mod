@@ -1,4 +1,4 @@
-module github.com/skinnyrad/tscm-change-detection
+module github.com/silvance/pixelsentinel
 
 go 1.25.0
 
@@ -6,6 +6,7 @@ require (
 	github.com/anthonynsimon/bild v0.14.0
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.12.0
+	github.com/google/uuid v1.6.0
 )
 
 require (

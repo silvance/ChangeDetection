@@ -102,14 +102,17 @@ class AnalysisFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.exportUris.collectLatest { uris ->
-                    if (uris != null) {
+                    if (uris != null && uris.isNotEmpty()) {
+                        // Single Evidence Pack zip — see TscmViewModel.exportAnalysis.
                         val shareIntent = Intent().apply {
-                            action = Intent.ACTION_SEND_MULTIPLE
-                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
-                            type = "image/*"
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_STREAM, uris.first())
+                            type = "application/zip"
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        startActivity(Intent.createChooser(shareIntent, "Export TSCM Evidence Package"))
+                        startActivity(
+                            Intent.createChooser(shareIntent, getString(R.string.title_export_pack))
+                        )
                         viewModel.resetExportUris()
                     }
                 }

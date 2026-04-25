@@ -10,8 +10,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/skinnyrad/tscm-change-detection/internal/imgproc"
-	"github.com/skinnyrad/tscm-change-detection/internal/state"
+	"github.com/silvance/pixelsentinel/internal/imgproc"
+	"github.com/silvance/pixelsentinel/internal/state"
 )
 
 type dimsJSON struct {

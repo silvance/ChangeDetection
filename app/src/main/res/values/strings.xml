@@ -50,6 +50,7 @@
     <string name="hint_scan_location">Scan Location / Target</string>
     <string name="label_scan_default">Scan %1$s</string>
     <string name="toast_label_required">Label cannot be empty</string>
+    <string name="title_export_pack">Send PixelSentinel Evidence Pack</string>
     <string name="label_change_pct">%1$d%% CHANGE</string>
     <string name="label_change_px">%1$d PX</string>
     <string name="label_regions">%1$d REGIONS</string>
