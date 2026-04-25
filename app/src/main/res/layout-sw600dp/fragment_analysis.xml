@@ -66,13 +66,18 @@
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom|end"
                     android:layout_margin="16dp"
-                    android:text="@string/label_alignment_active"
+                    android:text="@string/label_alignment_active_tap_clear"
                     android:textColor="@color/tscm_primary"
                     android:textSize="12sp"
                     android:textStyle="bold"
                     android:visibility="gone"
                     android:background="#AA000000"
-                    android:padding="8dp" />
+                    android:padding="8dp"
+                    android:elevation="12dp"
+                    android:translationZ="12dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="@string/cd_clear_alignment" />
             </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 

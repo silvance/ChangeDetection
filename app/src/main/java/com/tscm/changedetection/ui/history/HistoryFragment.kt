@@ -6,10 +6,15 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.tscm.changedetection.MainActivity
+import com.tscm.changedetection.R
 import com.tscm.changedetection.TscmViewModel
 import com.tscm.changedetection.databinding.FragmentHistoryBinding
 import com.tscm.changedetection.databinding.ItemHistoryCardBinding
@@ -19,7 +24,8 @@ import java.io.File
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 class HistoryFragment : Fragment() {
 
@@ -40,22 +46,35 @@ class HistoryFragment : Fragment() {
         val adapter = HistoryAdapter(
             lifecycleScope = viewLifecycleOwner.lifecycleScope,
             onDelete = { entity ->
-                lifecycleScope.launch { db.analysisDao().deleteById(entity.id) }
+                viewLifecycleOwner.lifecycleScope.launch {
+                    db.analysisDao().deleteById(entity.id)
+                    // Best-effort cleanup of orphaned image files.
+                    val dir = requireContext().filesDir
+                    runCatching { File(dir, entity.beforeFileName).delete() }
+                    runCatching { File(dir, entity.afterFileName).delete() }
+                    entity.resultFileName?.let { runCatching { File(dir, it).delete() } }
+                }
             },
             onSelect = { entity ->
                 viewModel.loadFromHistory(requireContext(), entity)
-                // Navigate back to Analysis (or Comparison) via the bottom nav
-                (activity as? MainActivity)?.findViewById<View>(com.tscm.changedetection.R.id.analysisFragment)?.performClick()
+                // Drive navigation through the BottomNavigationView so its
+                // visual selection follows the destination change. The view
+                // is wired up to the NavController in MainActivity.
+                requireActivity()
+                    .findViewById<BottomNavigationView>(R.id.bottom_nav)
+                    ?.selectedItemId = R.id.analysisFragment
             }
         )
 
         binding.recyclerHistory.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerHistory.adapter = adapter
 
-        lifecycleScope.launch {
-            db.analysisDao().getAllHistory().collectLatest { history ->
-                adapter.submitList(history)
-                binding.txtEmpty.visibility = if (history.isEmpty()) View.VISIBLE else View.GONE
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                db.analysisDao().getAllHistory().collectLatest { history ->
+                    adapter.submitList(history)
+                    binding.txtEmpty.visibility = if (history.isEmpty()) View.VISIBLE else View.GONE
+                }
             }
         }
     }
@@ -70,15 +89,9 @@ class HistoryAdapter(
     private val lifecycleScope: androidx.lifecycle.LifecycleCoroutineScope,
     private val onDelete: (AnalysisEntity) -> Unit,
     private val onSelect: (AnalysisEntity) -> Unit
-) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
+) : ListAdapter<AnalysisEntity, HistoryAdapter.ViewHolder>(DIFF) {
 
-    private var items = listOf<AnalysisEntity>()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-
-    fun submitList(newItems: List<AnalysisEntity>) {
-        items = newItems
-        notifyDataSetChanged()
-    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemHistoryCardBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -86,11 +99,20 @@ class HistoryAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val item = items[position]
-        holder.bind(item)
+        holder.bind(getItem(position))
     }
 
-    override fun getItemCount(): Int = items.size
+    companion object {
+        private val DIFF = object : DiffUtil.ItemCallback<AnalysisEntity>() {
+            override fun areItemsTheSame(a: AnalysisEntity, b: AnalysisEntity) = a.id == b.id
+            override fun areContentsTheSame(a: AnalysisEntity, b: AnalysisEntity) =
+                a.label == b.label &&
+                a.timestamp == b.timestamp &&
+                a.changedPct == b.changedPct &&
+                a.regions == b.regions &&
+                a.resultFileName == b.resultFileName
+        }
+    }
 
     inner class ViewHolder(private val itemBinding: ItemHistoryCardBinding) : RecyclerView.ViewHolder(itemBinding.root) {
         private var job: kotlinx.coroutines.Job? = null

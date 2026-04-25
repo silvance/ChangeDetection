@@ -37,6 +37,9 @@
     <!-- Analysis -->
     <string name="header_analysis">DETECTION ENGINE</string>
     <string name="label_alignment_active">ALIGNMENT ACTIVE</string>
+    <string name="label_alignment_active_tap_clear">ALIGNMENT ACTIVE — TAP TO CLEAR</string>
+    <string name="cd_clear_alignment">Clear active alignment</string>
+    <string name="msg_alignment_cleared">Alignment cleared</string>
     <string name="label_change_pct">%1$d%% CHANGE</string>
     <string name="label_change_px">%1$d PX</string>
     <string name="label_regions">%1$d REGIONS</string>

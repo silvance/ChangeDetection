@@ -121,6 +121,20 @@ class AnalysisFragment : Fragment() {
             toggleFullscreen()
         }
 
+        // Tap the ALIGNMENT ACTIVE badge to clear the active warp.
+        binding.txtWarpActive.setOnClickListener {
+            if (viewModel.hasActiveWarp()) {
+                viewModel.clearWarp()
+                binding.txtWarpActive.visibility = View.GONE
+                updateFabTint(false)
+                Toast.makeText(
+                    requireContext(),
+                    R.string.msg_alignment_cleared,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
         _binding?.magnifierView?.setup(binding.imgResult)
     }
 

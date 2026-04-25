@@ -10,7 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.tscm.changedetection"
-        minSdk = 35
+        // Was 35 (Android 15 only). Camera/Room/Material all support 26+, and
+        // the OPSEC features used here (FLAG_SECURE, edge-to-edge, cutout mode)
+        // are no-ops or already supported on API 26+.
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -18,7 +21,13 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Enable R8 for size + obfuscation. proguard-rules.pro is already on disk.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
