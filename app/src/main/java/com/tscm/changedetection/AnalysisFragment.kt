@@ -155,26 +155,32 @@ class AnalysisFragment : Fragment() {
 
     private fun showSaveDialog() {
         val input = EditText(requireContext())
-        input.hint = "Scan Location / Target"
+        input.hint = getString(R.string.hint_scan_location)
         val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        input.setText("Scan $timestamp")
+        input.setText(getString(R.string.label_scan_default, timestamp))
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Save to History")
+            .setTitle(R.string.dlg_save_history_title)
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val label = input.text.toString()
+            .setPositiveButton(R.string.dlg_save) { _, _ ->
+                val label = input.text.toString().trim()
+                if (label.isEmpty()) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.toast_label_required,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setPositiveButton
+                }
                 val state = viewModel.analysisState.value
                 val png = if (state is AnalysisState.Success) {
-                    // In a real app we'd get the actual PNG from the engine, 
-                    // for now we re-encode the bitmap if needed.
                     val stream = java.io.ByteArrayOutputStream()
                     state.highlightBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
                     stream.toByteArray()
                 } else null
                 viewModel.saveCurrentToHistory(requireContext(), db, label, png)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.label_cancel, null)
             .show()
     }
 
@@ -271,7 +277,6 @@ class AnalysisFragment : Fragment() {
 
         binding.btnColorRed.setOnClickListener {
             viewModel.highlightR = 255; viewModel.highlightG = 60; viewModel.highlightB = 60
-            updateFabTint(false)
         }
         binding.btnColorOrange.setOnClickListener {
             viewModel.highlightR = 255; viewModel.highlightG = 165; viewModel.highlightB = 0
@@ -298,6 +303,16 @@ class AnalysisFragment : Fragment() {
                             binding.progressBar.visibility = View.GONE
                             binding.btnAnalyze.isEnabled = true
                             binding.statsGroup.visibility = View.GONE
+
+                            // Clear any previous result so the user doesn't see
+                            // a stale highlight after clearing alignment or
+                            // loading a new pair of images.
+                            binding.imgResult.setImageDrawable(null)
+                            binding.imgResult.visibility = View.GONE
+                            binding.btnFullscreen.visibility = View.GONE
+                            _binding?.fabSave?.visibility = View.GONE
+                            _binding?.fabExport?.visibility = View.GONE
+                            binding.txtResized.visibility = View.GONE
 
                             // Show warp active indicator if a warp is applied
                             binding.txtWarpActive.visibility =

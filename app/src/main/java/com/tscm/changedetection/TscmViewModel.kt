@@ -3,6 +3,8 @@ package com.tscm.changedetection
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tscmlib.Tscmlib
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 
@@ -147,6 +150,10 @@ class TscmViewModel : ViewModel() {
         val before = warpedBeforeBytes ?: _beforeBytes.value ?: return
         val after = _afterBytes.value ?: return
 
+        // Drop the request if an analysis is already in flight — otherwise a
+        // user double-tap launches two coroutines that race on _analysisState.
+        if (_analysisState.value is AnalysisState.Running) return
+
         viewModelScope.launch {
             _analysisState.value = AnalysisState.Running
 
@@ -195,6 +202,8 @@ class TscmViewModel : ViewModel() {
     fun runAlternateAnalysis() {
         val before = warpedBeforeBytes ?: _beforeBytes.value ?: return
         val after = _afterBytes.value ?: return
+
+        if (_alternateState.value is AlternateState.Running) return
 
         viewModelScope.launch {
             _alternateState.value = AlternateState.Running
@@ -393,17 +402,48 @@ class TscmViewModel : ViewModel() {
     private fun stripExif(bytes: ByteArray): ByteArray {
         return try {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return bytes
+
+            // BitmapFactory ignores EXIF, so any rotation tag stays only as
+            // metadata. If we just strip metadata we'd end up with a sideways
+            // image whenever the source was a portrait phone shot or a
+            // gallery import. Apply the rotation to actual pixels first.
+            val rotated = applyExifRotation(bytes, bitmap)
+
             val stream = java.io.ByteArrayOutputStream()
-            // Re-encode as JPEG 95. This effectively creates a new image with zero original metadata.
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)
+            rotated.compress(Bitmap.CompressFormat.JPEG, 95, stream)
             val result = stream.toByteArray()
-            
-            // Explicitly hint to GC and zero out temporary bitmap if possible
-            bitmap.recycle()
-            
+
+            if (rotated !== bitmap) bitmap.recycle()
+            rotated.recycle()
+
             result
         } catch (e: Exception) {
             bytes
+        }
+    }
+
+    private fun applyExifRotation(bytes: ByteArray, bitmap: Bitmap): Bitmap {
+        return try {
+            val orientation = ByteArrayInputStream(bytes).use { stream ->
+                ExifInterface(stream).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            }
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+                ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(270f); matrix.postScale(-1f, 1f) }
+                else -> return bitmap
+            }
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        } catch (e: Exception) {
+            bitmap
         }
     }
 

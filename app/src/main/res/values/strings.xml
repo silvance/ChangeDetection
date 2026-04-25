@@ -40,6 +40,16 @@
     <string name="label_alignment_active_tap_clear">ALIGNMENT ACTIVE — TAP TO CLEAR</string>
     <string name="cd_clear_alignment">Clear active alignment</string>
     <string name="msg_alignment_cleared">Alignment cleared</string>
+
+    <!-- Save / Delete dialogs -->
+    <string name="dlg_save_history_title">Save to History</string>
+    <string name="dlg_save">SAVE</string>
+    <string name="dlg_delete">DELETE</string>
+    <string name="dlg_delete_scan_title">Delete saved scan?</string>
+    <string name="dlg_delete_scan_msg">\"%1$s\" and its evidence images will be permanently removed.</string>
+    <string name="hint_scan_location">Scan Location / Target</string>
+    <string name="label_scan_default">Scan %1$s</string>
+    <string name="toast_label_required">Label cannot be empty</string>
     <string name="label_change_pct">%1$d%% CHANGE</string>
     <string name="label_change_px">%1$d PX</string>
     <string name="label_regions">%1$d REGIONS</string>

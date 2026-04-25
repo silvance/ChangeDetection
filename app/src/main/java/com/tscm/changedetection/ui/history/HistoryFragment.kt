@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
@@ -46,14 +47,22 @@ class HistoryFragment : Fragment() {
         val adapter = HistoryAdapter(
             lifecycleScope = viewLifecycleOwner.lifecycleScope,
             onDelete = { entity ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    db.analysisDao().deleteById(entity.id)
-                    // Best-effort cleanup of orphaned image files.
-                    val dir = requireContext().filesDir
-                    runCatching { File(dir, entity.beforeFileName).delete() }
-                    runCatching { File(dir, entity.afterFileName).delete() }
-                    entity.resultFileName?.let { runCatching { File(dir, it).delete() } }
-                }
+                // Saved scans are evidence — require an explicit confirmation
+                // before destroying them.
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.dlg_delete_scan_title)
+                    .setMessage(getString(R.string.dlg_delete_scan_msg, entity.label))
+                    .setPositiveButton(R.string.dlg_delete) { _, _ ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            db.analysisDao().deleteById(entity.id)
+                            val dir = requireContext().filesDir
+                            runCatching { File(dir, entity.beforeFileName).delete() }
+                            runCatching { File(dir, entity.afterFileName).delete() }
+                            entity.resultFileName?.let { runCatching { File(dir, it).delete() } }
+                        }
+                    }
+                    .setNegativeButton(R.string.label_cancel, null)
+                    .show()
             },
             onSelect = { entity ->
                 viewModel.loadFromHistory(requireContext(), entity)
