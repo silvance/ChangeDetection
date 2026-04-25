@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- ── Instructions text ─────────────────────────────────────────────── -->
+        <TextView
+            android:id="@+id/txt_align_instructions"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textColor="@color/tscm_primary"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:padding="8dp"
+            android:background="#DD121212"
+            android:text="@string/instruct_align_start"
+            android:letterSpacing="0.1"
+            android:textStyle="bold"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- ── BEFORE label ──────────────────────────────────────────────────── -->
+        <TextView
+            android:id="@+id/lbl_before"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/label_reference_before"
+            android:textColor="@color/white"
+            android:textStyle="bold"
+            android:textSize="10sp"
+            android:letterSpacing="0.1"
+            android:padding="6dp"
+            android:background="#33000000"
+            app:layout_constraintTop_toBottomOf="@id/txt_align_instructions"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <!-- ── Before image + overlay (Left side) ──────────────────────────── -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_before"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/surface_variant"
+            app:cardCornerRadius="4dp"
+            app:strokeColor="@color/outline"
+            app:layout_constraintTop_toBottomOf="@id/lbl_before"
+            app:layout_constraintBottom_toTopOf="@id/btn_row"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/card_after">
+
+            <FrameLayout
+                android:id="@+id/frame_before"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/img_align_before"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerInside"
+                    android:background="#0A0A0A"
+                    android:contentDescription="Before image for alignment" />
+
+                <com.tscm.changedetection.PointOverlayView
+                    android:id="@+id/overlay_before"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+            </FrameLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── AFTER label ───────────────────────────────────────────────────── -->
+        <TextView
+            android:id="@+id/lbl_after"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/label_current_after"
+            android:textColor="@color/white"
+            android:textStyle="bold"
+            android:textSize="10sp"
+            android:letterSpacing="0.1"
+            android:padding="6dp"
+            android:background="#33000000"
+            app:layout_constraintTop_toBottomOf="@id/txt_align_instructions"
+            app:layout_constraintStart_toEndOf="@id/card_before" />
+
+        <!-- ── After image + overlay (Right side) ─────────────────────────── -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_after"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_margin="4dp"
+            app:cardBackgroundColor="@color/surface_variant"
+            app:cardCornerRadius="4dp"
+            app:strokeColor="@color/outline"
+            app:layout_constraintTop_toBottomOf="@id/lbl_after"
+            app:layout_constraintBottom_toTopOf="@id/btn_row"
+            app:layout_constraintStart_toEndOf="@id/card_before"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <FrameLayout
+                android:id="@+id/frame_after"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/img_align_after"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerInside"
+                    android:background="#0A0A0A"
+                    android:contentDescription="After image for alignment" />
+
+                <com.tscm.changedetection.PointOverlayView
+                    android:id="@+id/overlay_after"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+            </FrameLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Button row ────────────────────────────────────────────────────── -->
+        <LinearLayout
+            android:id="@+id/btn_row"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:padding="8dp"
+            android:background="@color/surface_variant"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <Button
+                android:id="@+id/btn_cancel_warp"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="@string/label_cancel"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:textColor="@color/white"
+                android:textAllCaps="true" />
+
+            <Button
+                android:id="@+id/btn_undo"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="@string/label_undo"
+                android:enabled="false"
+                style="@style/Widget.Tscm.Button.Outlined" />
+
+            <Button
+                android:id="@+id/btn_confirm_warp"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:text="@string/label_apply"
+                android:enabled="false"
+                style="@style/Widget.Tscm.Button.Tonal" />
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

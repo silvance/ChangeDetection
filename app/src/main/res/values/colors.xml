@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF121212</color>
+    <color name="white">#FFE0E0E0</color>
+    <color name="tscm_primary">#00E5FF</color>
+    <color name="tscm_primary_dark">#00B8CC</color>
+    <color name="surface_variant">#1E1E1E</color>
+    <color name="outline">#333333</color>
+    <color name="error">#CF6679</color>
+</resources>

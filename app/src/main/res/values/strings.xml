@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TSCM Change Detection</string>
+
+    <!-- General Labels -->
+    <string name="label_reference_before">REFERENCE (BEFORE)</string>
+    <string name="label_current_after">CURRENT (AFTER)</string>
+    <string name="label_cancel">CANCEL</string>
+    <string name="label_ellipsis">&#8230;</string>
+    <string name="label_undo">UNDO</string>
+    <string name="label_apply">APPLY</string>
+    <string name="label_before">BEFORE</string>
+    <string name="label_after">AFTER</string>
+
+    <!-- Acquisition -->
+    <string name="header_acquisition">IMAGE ACQUISITION</string>
+    <string name="btn_scan_reference">SCAN REFERENCE</string>
+    <string name="btn_scan_current">SCAN CURRENT</string>
+    <string name="btn_import">IMPORT</string>
+
+    <!-- Alignment -->
+    <string name="instruct_align_start">Tap a landmark on BEFORE ↑ to start</string>
+    <string name="instruct_align_pending">Now tap the matching point on AFTER ↓</string>
+    <string name="instruct_align_pending_land">Now tap the matching point on AFTER →</string>
+    <string name="instruct_align_min_met">Tap a landmark on BEFORE ↑ (%1$d pairs — tap Apply or add more)</string>
+    <string name="instruct_align_min_met_land">Tap a landmark on BEFORE ← (%1$d pairs — tap Apply or add more)</string>
+    <string name="instruct_align_max">8 pairs placed. Tap Apply Alignment.</string>
+    <string name="instruct_align_progress">Tap a landmark on BEFORE ↑ (%1$d/4 minimum)</string>
+    <string name="instruct_align_progress_land">Tap a landmark on BEFORE ← (%1$d/4 minimum)</string>
+    <string name="msg_max_pairs">Maximum 8 pairs reached</string>
+    <string name="msg_tap_after">Now tap the matching point on AFTER</string>
+    <string name="msg_tap_before_first">Tap a point on BEFORE first</string>
+    <string name="msg_align_applied">Alignment applied</string>
+    <string name="msg_align_failed">Warp failed — try different points</string>
+    <string name="btn_warping">Warping...</string>
+
+    <!-- Analysis -->
+    <string name="header_analysis">DETECTION ENGINE</string>
+    <string name="label_alignment_active">ALIGNMENT ACTIVE</string>
+    <string name="label_change_pct">%1$d%% CHANGE</string>
+    <string name="label_change_px">%1$d PX</string>
+    <string name="label_regions">%1$d REGIONS</string>
+    <string name="label_resized">IMAGE RESIZED FOR PROCESSING</string>
+    <string name="btn_run_detection">RUN DETECTION</string>
+    <string name="label_parameters">PARAMETERS</string>
+    <string name="label_strength">STRENGTH</string>
+    <string name="label_noise_reduction">NOISE REDUCTION</string>
+    <string name="label_fill_gaps">FILL GAPS</string>
+    <string name="label_highlight_color">HIGHLIGHT COLOR</string>
+    <string name="label_lighting_norm">LIGHTING NORMALIZATION</string>
+
+    <string name="label_pre_blur">PRE-BLUR (GAUSSIAN)</string>
+    <string name="label_min_region">MIN REGION SIZE</string>
+    <string name="label_highlight_opacity">HIGHLIGHT OPACITY</string>
+    <string name="label_px_value">%1$d PX</string>
+
+    <!-- Alternate Analysis -->
+    <string name="header_diagnostics">DIAGNOSTIC OVERLAYS</string>
+    <string name="btn_generate_diagnostics">GENERATE DIAGNOSTICS</string>
+    <string name="header_contour_mapping">CONTOUR MAPPING</string>
+    <string name="label_contours">CONTOURS</string>
+    <string name="label_img_diff">IMAGE DIFFERENCE</string>
+    <string name="label_channel_sub">CHANNEL SUBTRACTION</string>
+    <string name="label_intensity_heat">INTENSITY HEATMAP</string>
+    <string name="label_canny_edges">CANNY EDGES</string>
+    <string name="label_contour_overlay">CONTOUR OVERLAY</string>
+    <string name="toast_capture_both">Capture both BEFORE and AFTER images first</string>
+    <!-- Metrics -->
+    <string name="label_changed_area">CHANGED AREA</string>
+    <string name="label_pixel_count">PIXEL COUNT</string>
+    <string name="label_pct_value">%1$d%%</string>
+
+    <string name="header_comparison">COMPARATIVE ANALYSIS</string>
+    <string name="label_horizontal">HORIZONTAL</string>
+    <string name="label_vertical">VERTICAL</string>
+    <string name="label_swap">↔</string>
+    <string name="btn_slider">SLIDER</string>
+    <string name="btn_toggle">TOGGLE</string>
+    <string name="btn_auto">AUTO</string>
+
+    <string name="label_flicker_interval">FLICKER INTERVAL: %1$dms</string>
+    <string name="label_strip_metadata">STRIP METADATA (EXIF)</string>
+    <string name="msg_metadata_stripped">Metadata stripped for counter-intelligence</string>
+    <string name="label_fullscreen">FULLSCREEN</string>
+
+    <!-- Capture -->
+    <string name="btn_camera_before">📷 CAMERA BEFORE</string>
+    <string name="btn_camera_after">📷 CAMERA AFTER</string>
+    <string name="btn_tap_to_capture_before">TAP AGAIN TO CAPTURE BEFORE</string>
+    <string name="btn_tap_to_capture_after">TAP AGAIN TO CAPTURE AFTER</string>
+    <string name="toast_before_loaded">BEFORE image loaded</string>
+    <string name="toast_after_loaded">AFTER image loaded</string>
+    <string name="toast_captured">%1$s captured</string>
+</resources>

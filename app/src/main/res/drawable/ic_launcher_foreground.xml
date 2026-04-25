@@ -1,0 +1,32 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Glow / Halo -->
+    <path
+        android:fillColor="#1A00E5FF"
+        android:pathData="M54,54m-48,0a48,48 0,1 1,96 0a48,48 0,1 1,-96 0" />
+
+    <!-- Central Eye Motif -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M54,34C38,34 24,44 18,54C24,64 38,74 54,74C70,74 84,64 90,54C84,44 70,34 54,34ZM54,66C47.37,66 42,60.63 42,54C42,47.37 47.37,42 54,42C60.63,42 66,47.37 66,54C66,60.63 60.63,66 54,66Z" />
+
+    <!-- Pupil -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M54,54m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+
+    <!-- Scanner Line (Horizontal) -->
+    <path
+        android:fillColor="#FF1744"
+        android:pathData="M14,53.5h80v1h-80z" />
+
+    <!-- Corners (HUD style) -->
+    <path
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="2"
+        android:pathData="M24,38h-4v4 M24,70h-4v-4 M84,38h4v4 M84,70h4v-4" />
+
+</vector>

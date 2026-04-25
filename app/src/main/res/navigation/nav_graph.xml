@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/captureFragment">
+
+    <fragment
+        android:id="@+id/captureFragment"
+        android:name="com.tscm.changedetection.CaptureFragment"
+        android:label="Capture" />
+
+    <fragment
+        android:id="@+id/comparisonFragment"
+        android:name="com.tscm.changedetection.ComparisonFragment"
+        android:label="Compare" />
+
+    <fragment
+        android:id="@+id/analysisFragment"
+        android:name="com.tscm.changedetection.AnalysisFragment"
+        android:label="Analysis" />
+
+    <fragment
+        android:id="@+id/historyFragment"
+        android:name="com.tscm.changedetection.ui.history.HistoryFragment"
+        android:label="History" />
+
+    <fragment
+        android:id="@+id/alternateAnalysisFragment"
+        android:name="com.tscm.changedetection.AlternateAnalysisFragment"
+        android:label="Diagnostics" />
+
+</navigation>
