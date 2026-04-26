@@ -88,6 +88,7 @@ func main() {
 	v1.Register(v1g, lib, v1.ServerInfo{
 		Name:    appName,
 		Version: appVersion,
+		DataDir: *dataDir,
 	})
 
 	// Serve embedded React frontend for all other routes (SPA fallback)

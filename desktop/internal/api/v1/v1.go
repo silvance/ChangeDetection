@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,15 +25,19 @@ import (
 // running daemon — the phone uses this to verify it's pointed at a
 // PixelSentinel instance and not some other Gin server on the same port.
 type ServerInfo struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	DataDir   string `json:"dataDir,omitempty"`   // populated for loopback callers only
+	Token     string `json:"token,omitempty"`     // ditto — never leaks off-host
+	Loopback  bool   `json:"loopback"`            // true when the request came from this host
 }
 
 // Register attaches all v1 routes to the given Gin group.
 func Register(g *gin.RouterGroup, lib *library.Library, info ServerInfo) {
 	h := &handlers{lib: lib, info: info}
 
-	// Public — used by phones for discovery / sanity check.
+	// Public — used by phones for discovery / sanity check, and by the
+	// bundled UI for the Settings page.
 	g.GET("/info", h.getInfo)
 
 	// Authenticated — anything that touches the library.
@@ -59,11 +64,26 @@ type handlers struct {
 
 // ── Auth ───────────────────────────────────────────────────────────────────
 
+// requirePairingToken gates v1 endpoints. Two trust modes:
+//
+//   - Loopback (the request originated on the same machine the server
+//     runs on) is trusted unconditionally. This is what lets the bundled
+//     React UI talk to /api/v1 without making the operator paste a token
+//     into their own browser. Anyone with shell access on the box could
+//     hit the endpoints anyway, so requiring a token here would buy
+//     nothing but friction.
+//
+//   - Anything else (a phone on the LAN, a dev machine, a future
+//     companion) must present the pairing token in either
+//     X-PixelSentinel-Token or Authorization: Bearer <token>.
 func requirePairingToken(lib *library.Library) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isLoopback(c.ClientIP()) {
+			c.Next()
+			return
+		}
 		got := c.GetHeader("X-PixelSentinel-Token")
 		if got == "" {
-			// Allow Authorization: Bearer <token> as a fallback.
 			if h := c.GetHeader("Authorization"); strings.HasPrefix(h, "Bearer ") {
 				got = strings.TrimPrefix(h, "Bearer ")
 			}
@@ -76,6 +96,17 @@ func requirePairingToken(lib *library.Library) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func isLoopback(ip string) bool {
+	if ip == "" {
+		return false
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	return parsed.IsLoopback()
 }
 
 // constantTimeEq is a length-then-byte comparison that is constant time wrt
@@ -101,7 +132,18 @@ func constantTimeEq(got, want string) bool {
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 func (h *handlers) getInfo(c *gin.Context) {
-	c.JSON(http.StatusOK, h.info)
+	resp := h.info
+	if isLoopback(c.ClientIP()) {
+		resp.Loopback = true
+		resp.Token = h.lib.PairingToken()
+		// DataDir is set during construction by the caller via Register.
+	} else {
+		// Strip anything sensitive for off-host callers.
+		resp.DataDir = ""
+		resp.Token = ""
+		resp.Loopback = false
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *handlers) listCases(c *gin.Context) {
