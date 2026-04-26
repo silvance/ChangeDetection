@@ -51,6 +51,15 @@ sealed class AlternateState {
     data class Error(val message: String) : AlternateState()
 }
 
+/** State of an in-flight or completed upload of a saved scan to the desktop. */
+sealed class SendStatus {
+    object Idle : SendStatus()
+    object NotPaired : SendStatus()
+    data class Sending(val entityId: Int) : SendStatus()
+    data class Success(val entityId: Int, val caseId: String, val scanId: String) : SendStatus()
+    data class Failed(val entityId: Int, val message: String) : SendStatus()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ViewModel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +123,9 @@ class TscmViewModel : ViewModel() {
 
     private val _exportUris = MutableStateFlow<List<Uri>?>(null)
     val exportUris: StateFlow<List<Uri>?> = _exportUris.asStateFlow()
+
+    private val _sendStatus = MutableStateFlow<SendStatus>(SendStatus.Idle)
+    val sendStatus: StateFlow<SendStatus> = _sendStatus.asStateFlow()
 
     // ── Image setters (called from CaptureFragment) ───────────────────────────
 
@@ -429,15 +441,21 @@ class TscmViewModel : ViewModel() {
                     it.toByteArray()
                 }
 
-                writeEvidencePack(
-                    out = zipFile,
+                val packBytes = com.tscm.changedetection.pairing.EvidencePack.build(
                     label = label,
                     capturedAtMs = timestamp,
-                    stats = state,
+                    params = currentParams(),
+                    stats = com.tscm.changedetection.pairing.EvidencePack.Stats(
+                        changedPct = state.changedPct,
+                        changedPixels = state.changedPixels,
+                        regions = state.regions
+                    ),
                     beforeJpg = before,
                     afterJpg = after,
-                    resultPng = resultPng
+                    resultPng = resultPng,
+                    warp = currentWarp()
                 )
+                zipFile.writeBytes(packBytes)
 
                 val uri = FileProvider.getUriForFile(
                     context,
@@ -451,101 +469,102 @@ class TscmViewModel : ViewModel() {
         }
     }
 
-    private fun writeEvidencePack(
-        out: File,
-        label: String,
-        capturedAtMs: Long,
-        stats: AnalysisState.Success,
-        beforeJpg: ByteArray,
-        afterJpg: ByteArray,
-        resultPng: ByteArray?
-    ) {
-        val isoTimestamp = java.text.SimpleDateFormat(
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            java.util.Locale.US
-        ).apply {
-            timeZone = java.util.TimeZone.getTimeZone("UTC")
-        }.format(java.util.Date(capturedAtMs))
+    /**
+     * Build an Evidence Pack from a saved history entity (reading bytes
+     * from filesDir) and POST it to the paired PixelSentinel desktop.
+     * Reports progress via [sendStatus].
+     */
+    fun sendSavedScanToDesktop(context: Context, entity: com.tscm.changedetection.db.AnalysisEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _sendStatus.value = SendStatus.Sending(entity.id)
 
-        val manifest = buildManifestJson(
-            label = label,
-            capturedAtIso = isoTimestamp,
-            stats = stats,
-            includeResult = resultPng != null
-        )
-
-        java.util.zip.ZipOutputStream(out.outputStream().buffered()).use { zip ->
-            zip.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
-            zip.write(manifest.toByteArray(Charsets.UTF_8))
-            zip.closeEntry()
-
-            zip.putNextEntry(java.util.zip.ZipEntry("before.jpg"))
-            zip.write(beforeJpg)
-            zip.closeEntry()
-
-            zip.putNextEntry(java.util.zip.ZipEntry("after.jpg"))
-            zip.write(afterJpg)
-            zip.closeEntry()
-
-            if (resultPng != null) {
-                zip.putNextEntry(java.util.zip.ZipEntry("result.png"))
-                zip.write(resultPng)
-                zip.closeEntry()
+            val prefs = com.tscm.changedetection.pairing.PairingPrefs.get(context)
+            if (!prefs.isConfigured) {
+                _sendStatus.value = SendStatus.NotPaired
+                return@launch
             }
+
+            val packBytes = runCatching { buildPackFromEntity(context, entity) }
+                .getOrElse { e ->
+                    _sendStatus.value = SendStatus.Failed(entity.id, e.message ?: "build failed")
+                    return@launch
+                }
+
+            val res = com.tscm.changedetection.pairing.PixelSentinelClient.importPack(
+                host = prefs.host,
+                token = prefs.token,
+                packBytes = packBytes
+            )
+            res.fold(
+                onSuccess = { ok -> _sendStatus.value = SendStatus.Success(entity.id, ok.caseId, ok.scanId) },
+                onFailure = { e -> _sendStatus.value = SendStatus.Failed(entity.id, e.message ?: "?") }
+            )
         }
     }
 
-    private fun buildManifestJson(
-        label: String,
-        capturedAtIso: String,
-        stats: AnalysisState.Success,
-        includeResult: Boolean
-    ): String {
-        // Inlined to avoid pulling in another JSON dependency for one struct.
-        // org.json.JSONObject is available on Android out of the box but
-        // produces unstable key order; we want a stable, hash-friendly form.
-        fun esc(s: String): String = s
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
+    private fun buildPackFromEntity(
+        context: Context,
+        entity: com.tscm.changedetection.db.AnalysisEntity
+    ): ByteArray {
+        val before = File(context.filesDir, entity.beforeFileName).readBytes()
+        val after = File(context.filesDir, entity.afterFileName).readBytes()
+        val result = entity.resultFileName?.let { File(context.filesDir, it).readBytes() }
 
-        val warpJson = if (warpSrcJson != null && warpDstJson != null) {
-            ""","warp":{"src":${warpSrcJson},"dst":${warpDstJson}}"""
-        } else ""
-
-        val resultEntry = if (includeResult) ""","result":"result.png"""" else ""
-
-        return """{
-  "version": 1,
-  "label": "${esc(label)}",
-  "capturedAt": "$capturedAtIso",
-  "source": "phone:android",
-  "stats": {
-    "changedPct": ${stats.changedPct},
-    "changedPixels": ${stats.changedPixels},
-    "regions": ${stats.regions}
-  },
-  "params": {
-    "strength": $strength,
-    "morphSize": $morphSize,
-    "closeSize": $closeSize,
-    "minRegion": $minRegion,
-    "preBlurSigma": $preBlurSigma,
-    "normalizeLuma": $normalizeLuma,
-    "highlightR": $highlightR,
-    "highlightG": $highlightG,
-    "highlightB": $highlightB,
-    "highlightAlpha": $highlightAlpha
-  }$warpJson,
-  "files": {
-    "before": "before.jpg",
-    "after": "after.jpg"$resultEntry
-  }
-}
-"""
+        return com.tscm.changedetection.pairing.EvidencePack.build(
+            label = entity.label,
+            capturedAtMs = entity.timestamp,
+            params = com.tscm.changedetection.pairing.EvidencePack.Params(
+                strength = entity.strength,
+                morphSize = entity.morphSize,
+                closeSize = entity.closeSize,
+                minRegion = entity.minRegion,
+                preBlurSigma = entity.preBlurSigma,
+                normalizeLuma = entity.normalizeLuma,
+                highlightR = entity.highlightR,
+                highlightG = entity.highlightG,
+                highlightB = entity.highlightB,
+                highlightAlpha = entity.highlightAlpha
+            ),
+            stats = com.tscm.changedetection.pairing.EvidencePack.Stats(
+                changedPct = entity.changedPct,
+                changedPixels = entity.changedPixels,
+                regions = entity.regions
+            ),
+            beforeJpg = before,
+            afterJpg = after,
+            resultPng = result,
+            warp = entity.warpSrcJson?.let { src ->
+                entity.warpDstJson?.let { dst ->
+                    com.tscm.changedetection.pairing.EvidencePack.Warp(src, dst)
+                }
+            }
+        )
     }
+
+    fun resetSendStatus() {
+        _sendStatus.value = SendStatus.Idle
+    }
+
+    private fun currentParams(): com.tscm.changedetection.pairing.EvidencePack.Params =
+        com.tscm.changedetection.pairing.EvidencePack.Params(
+            strength = strength,
+            morphSize = morphSize,
+            closeSize = closeSize,
+            minRegion = minRegion,
+            preBlurSigma = preBlurSigma,
+            normalizeLuma = normalizeLuma,
+            highlightR = highlightR,
+            highlightG = highlightG,
+            highlightB = highlightB,
+            highlightAlpha = highlightAlpha
+        )
+
+    private fun currentWarp(): com.tscm.changedetection.pairing.EvidencePack.Warp? =
+        warpSrcJson?.let { src ->
+            warpDstJson?.let { dst ->
+                com.tscm.changedetection.pairing.EvidencePack.Warp(src, dst)
+            }
+        }
 
     fun resetExportUris() {
         _exportUris.value = null

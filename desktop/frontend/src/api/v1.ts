@@ -66,6 +66,21 @@ export interface Scan {
   stats: ScanStats;
   params: ScanParams;
   files: ScanFiles;
+  /** SHA-256 of (before|after|result) bytes; computed on import. */
+  contentHash: string;
+  /** Previous scan's contentHash in the same case, or empty for first. */
+  prevHash?: string;
+}
+
+export interface LedgerEntry {
+  scanId: string;
+  label: string;
+  capturedAt: string;
+  contentHash: string;
+  prevHash?: string;
+  verified: boolean;
+  verifyError?: string;
+  chainBroken?: boolean;
 }
 
 const base = '/api/v1';
@@ -114,6 +129,9 @@ export const api = {
 
   listScans: (caseId: string) =>
     request<{ scans: Scan[] }>(`/cases/${caseId}/scans`).then((r) => r.scans),
+
+  getLedger: (caseId: string) =>
+    request<{ ledger: LedgerEntry[] }>(`/cases/${caseId}/ledger`).then((r) => r.ledger),
 
   getScan: (caseId: string, scanId: string) =>
     request<Scan>(`/cases/${caseId}/scans/${scanId}`),

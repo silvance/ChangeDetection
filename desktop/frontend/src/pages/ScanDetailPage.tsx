@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import { api, type Scan } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
+import { ImageComparisonTab } from '../components/ImageComparisonTab';
 import { formatAbsolute, formatInt, formatPct } from '../utils/format';
 
 interface Props {
@@ -76,18 +77,21 @@ export function ScanDetailPage({ caseId, scanId, onBack }: Props) {
       <Box sx={{ px: 4, py: 3 }}>
         <Grid container spacing={3}>
           <Grid item xs={12} md={8}>
-            <Stack spacing={2}>
+            <Stack spacing={3}>
               {resultUrl && (
                 <ImageCard title="Result (highlight)" url={resultUrl} accent />
               )}
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <ImageCard title="Before" url={beforeUrl} />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <ImageCard title="After" url={afterUrl} />
-                </Grid>
-              </Grid>
+
+              <Paper variant="outlined" sx={{ p: 2 }}>
+                <Typography
+                  variant="overline"
+                  color="text.secondary"
+                  sx={{ fontSize: 10, display: 'block', mb: 1 }}
+                >
+                  Before / After comparison
+                </Typography>
+                <ImageComparisonTab beforeUrl={beforeUrl} afterUrl={afterUrl} />
+              </Paper>
             </Stack>
           </Grid>
 
@@ -95,6 +99,7 @@ export function ScanDetailPage({ caseId, scanId, onBack }: Props) {
             <Stack spacing={2}>
               <StatsCard scan={scan} />
               <ParamsCard scan={scan} />
+              <ChainCard scan={scan} />
             </Stack>
           </Grid>
         </Grid>
@@ -204,6 +209,42 @@ function ParamsCard({ scan }: { scan: Scan }) {
             </Stack>
           }
         />
+      </Stack>
+    </Paper>
+  );
+}
+
+function ChainCard({ scan }: { scan: Scan }) {
+  return (
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+        Chain of custody
+      </Typography>
+      <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Content hash (SHA-256)
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}
+          >
+            {scan.contentHash || '—'}
+          </Typography>
+        </Box>
+        {scan.prevHash && (
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              Previous in case
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all' }}
+            >
+              {scan.prevHash}
+            </Typography>
+          </Box>
+        )}
       </Stack>
     </Paper>
   );

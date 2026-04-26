@@ -46,6 +46,7 @@ class HistoryFragment : Fragment() {
 
         val adapter = HistoryAdapter(
             lifecycleScope = viewLifecycleOwner.lifecycleScope,
+            onSend = { entity -> viewModel.sendSavedScanToDesktop(requireContext(), entity) },
             onDelete = { entity ->
                 // Saved scans are evidence — require an explicit confirmation
                 // before destroying them.
@@ -86,6 +87,47 @@ class HistoryFragment : Fragment() {
                 }
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.sendStatus.collectLatest { status ->
+                    when (status) {
+                        com.tscm.changedetection.SendStatus.Idle -> Unit
+                        com.tscm.changedetection.SendStatus.NotPaired -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                R.string.msg_send_no_pairing,
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            viewModel.resetSendStatus()
+                        }
+                        is com.tscm.changedetection.SendStatus.Sending -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                R.string.msg_send_in_progress,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        is com.tscm.changedetection.SendStatus.Success -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                R.string.msg_send_ok,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            viewModel.resetSendStatus()
+                        }
+                        is com.tscm.changedetection.SendStatus.Failed -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                getString(R.string.msg_send_failed, status.message),
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            viewModel.resetSendStatus()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onDestroyView() {
@@ -96,6 +138,7 @@ class HistoryFragment : Fragment() {
 
 class HistoryAdapter(
     private val lifecycleScope: androidx.lifecycle.LifecycleCoroutineScope,
+    private val onSend: (AnalysisEntity) -> Unit,
     private val onDelete: (AnalysisEntity) -> Unit,
     private val onSelect: (AnalysisEntity) -> Unit
 ) : ListAdapter<AnalysisEntity, HistoryAdapter.ViewHolder>(DIFF) {
@@ -147,6 +190,7 @@ class HistoryAdapter(
                 }
             }
 
+            itemBinding.btnSend.setOnClickListener { onSend(item) }
             itemBinding.btnDelete.setOnClickListener { onDelete(item) }
             itemBinding.root.setOnClickListener { onSelect(item) }
         }

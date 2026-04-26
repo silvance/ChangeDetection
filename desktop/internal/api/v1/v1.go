@@ -50,6 +50,7 @@ func Register(g *gin.RouterGroup, lib *library.Library, info ServerInfo) {
 	auth.DELETE("/cases/:caseId", h.deleteCase)
 
 	auth.GET("/cases/:caseId/scans", h.listScans)
+	auth.GET("/cases/:caseId/ledger", h.getLedger)
 	auth.GET("/cases/:caseId/scans/:scanId", h.getScan)
 	auth.GET("/cases/:caseId/scans/:scanId/files/:name", h.getScanFile)
 	auth.DELETE("/cases/:caseId/scans/:scanId", h.deleteScan)
@@ -194,6 +195,15 @@ func (h *handlers) deleteCase(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *handlers) getLedger(c *gin.Context) {
+	entries, err := h.lib.Ledger(c.Param("caseId"))
+	if err != nil {
+		fail(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ledger": entries})
 }
 
 func (h *handlers) listScans(c *gin.Context) {

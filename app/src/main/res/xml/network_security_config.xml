@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Cleartext HTTP is rejected by default on Android 9+. PixelSentinel
+         desktops typically run on the same LAN as the operator's phone and
+         use plain HTTP with token auth + loopback bypass; allowing
+         cleartext only to private RFC1918 ranges + link-local + loopback
+         keeps that workflow possible without weakening anything else. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <!-- 10.0.0.0/8 -->
+        <domain-prefix>10.</domain-prefix>
+        <!-- 192.168.0.0/16 -->
+        <domain-prefix>192.168.</domain-prefix>
+        <!-- 172.16.0.0/12 — coarse: covers 172.16-31.* but also 172.0-15.* and 172.32-255.* -->
+        <domain-prefix>172.</domain-prefix>
+        <!-- Link-local 169.254.0.0/16 -->
+        <domain-prefix>169.254.</domain-prefix>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

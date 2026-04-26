@@ -15,6 +15,7 @@ package library
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -58,6 +59,14 @@ type Scan struct {
 	Stats      ScanStats  `json:"stats"`
 	Params     ScanParams `json:"params"`
 	Files      ScanFiles  `json:"files"`
+
+	// ── Tamper-evident hash chain (filled by AddScan) ─────────────────────
+	// ContentHash is the SHA-256 of the canonical content of this scan
+	// (before|after|result bytes concatenated in order). PrevHash is the
+	// ContentHash of the previous scan in the same case (newest-first
+	// chronological lookup), or empty for the first scan in a case.
+	ContentHash string `json:"contentHash"`
+	PrevHash    string `json:"prevHash,omitempty"`
 }
 
 // ScanStats mirrors the analysis numbers produced by the imgproc core.
@@ -277,7 +286,10 @@ type ScanInputFiles struct {
 	ResultPNG []byte // may be nil
 }
 
-// AddScan persists a new scan into the given case.
+// AddScan persists a new scan into the given case. Computes the
+// content hash and chains it to the previous scan in the case so the
+// resulting library is tamper-evident: changing any saved bytes or
+// reordering scans within a case will break the chain.
 func (l *Library) AddScan(caseID string, s Scan, files ScanInputFiles) (*Scan, error) {
 	if caseID == "" {
 		return nil, errors.New("empty case id")
@@ -304,6 +316,17 @@ func (l *Library) AddScan(caseID string, s Scan, files ScanInputFiles) (*Scan, e
 	}
 	if s.Source == "" {
 		s.Source = "unknown"
+	}
+
+	// Compute the content hash before persisting anything: this is what
+	// the chain commits to.
+	s.ContentHash = computeContentHash(files.BeforeJPG, files.AfterJPG, files.ResultPNG)
+
+	// Chain to the most recently *imported* prior scan in this case.
+	// ImportedAt is set here on the server, so it's monotonic and
+	// unambiguous (CapturedAt comes from the phone and can collide).
+	if prev, err := l.scansByImportLocked(caseID); err == nil && len(prev) > 0 {
+		s.PrevHash = prev[len(prev)-1].ContentHash
 	}
 
 	scanDir := l.scanDir(caseID, s.ID)
@@ -340,11 +363,60 @@ func (l *Library) AddScan(caseID string, s Scan, files ScanInputFiles) (*Scan, e
 	return &s, nil
 }
 
+// computeContentHash is the canonical hash function for a scan's content.
+// Order matters: before, after, then result (if present). Length-prefixing
+// each section means concatenation can't be confused (i.e. a scan with
+// before=AB,after=C and one with before=A,after=BC don't collide).
+func computeContentHash(beforeJPG, afterJPG, resultPNG []byte) string {
+	h := sha256.New()
+	writeLengthPrefixed(h, beforeJPG)
+	writeLengthPrefixed(h, afterJPG)
+	if len(resultPNG) > 0 {
+		writeLengthPrefixed(h, resultPNG)
+	} else {
+		// Marker for "no result" so a missing result is distinguishable
+		// from a zero-byte one.
+		writeLengthPrefixed(h, nil)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeLengthPrefixed(w io.Writer, b []byte) {
+	var hdr [8]byte
+	n := uint64(len(b))
+	for i := 0; i < 8; i++ {
+		hdr[i] = byte(n >> (8 * (7 - i)))
+	}
+	w.Write(hdr[:])
+	w.Write(b)
+}
+
 // ListScans returns all scans in a case sorted newest-first by CapturedAt.
 func (l *Library) ListScans(caseID string) ([]Scan, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.listScansLocked(caseID)
+}
+
+// scansByImportLocked returns scans for a case sorted by ImportedAt
+// ascending (oldest-first). Used for hash-chain construction and ledger
+// rendering — both depend on a deterministic, server-controlled order
+// that listScansLocked (sorted by CapturedAt for display) cannot give.
+func (l *Library) scansByImportLocked(caseID string) ([]Scan, error) {
+	scans, err := l.listScansLocked(caseID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Scan, len(scans))
+	copy(out, scans)
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].ImportedAt.Equal(out[j].ImportedAt) {
+			return out[i].ImportedAt.Before(out[j].ImportedAt)
+		}
+		// Tie-break by ID so the order is deterministic across processes.
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
 }
 
 func (l *Library) listScansLocked(caseID string) ([]Scan, error) {
@@ -418,6 +490,73 @@ func (l *Library) ScanFilePath(caseID, scanID, name string) (string, error) {
 		return "", errors.New("invalid file name")
 	}
 	return filepath.Join(l.scanDir(caseID, scanID), cleaned), nil
+}
+
+// LedgerEntry is one row of the verifiable hash chain for a case.
+type LedgerEntry struct {
+	ScanID       string    `json:"scanId"`
+	Label        string    `json:"label"`
+	CapturedAt   time.Time `json:"capturedAt"`
+	ContentHash  string    `json:"contentHash"`
+	PrevHash     string    `json:"prevHash,omitempty"`
+	Verified     bool      `json:"verified"`
+	VerifyError  string    `json:"verifyError,omitempty"`
+	ChainBroken  bool      `json:"chainBroken,omitempty"`
+}
+
+// Ledger returns the full verifiable hash chain for a case in import order
+// (oldest-first), recomputing each scan's contentHash from the bytes on
+// disk and checking that the chain's prevHash links match.
+func (l *Library) Ledger(caseID string) ([]LedgerEntry, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	chrono, err := l.scansByImportLocked(caseID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]LedgerEntry, 0, len(chrono))
+	expectedPrev := ""
+	for _, s := range chrono {
+		entry := LedgerEntry{
+			ScanID:      s.ID,
+			Label:       s.Label,
+			CapturedAt:  s.CapturedAt,
+			ContentHash: s.ContentHash,
+			PrevHash:    s.PrevHash,
+		}
+
+		// Recompute the content hash from the actual files on disk.
+		beforePath := filepath.Join(l.scanDir(caseID, s.ID), s.Files.Before)
+		afterPath := filepath.Join(l.scanDir(caseID, s.ID), s.Files.After)
+		var resultBytes []byte
+		if s.Files.Result != nil && *s.Files.Result != "" {
+			resultBytes, _ = os.ReadFile(filepath.Join(l.scanDir(caseID, s.ID), *s.Files.Result))
+		}
+		beforeBytes, errB := os.ReadFile(beforePath)
+		afterBytes, errA := os.ReadFile(afterPath)
+		switch {
+		case errB != nil:
+			entry.VerifyError = "before missing: " + errB.Error()
+		case errA != nil:
+			entry.VerifyError = "after missing: " + errA.Error()
+		default:
+			recomputed := computeContentHash(beforeBytes, afterBytes, resultBytes)
+			entry.Verified = recomputed == s.ContentHash
+			if !entry.Verified {
+				entry.VerifyError = "content hash mismatch"
+			}
+		}
+
+		if s.PrevHash != expectedPrev {
+			entry.ChainBroken = true
+		}
+		expectedPrev = s.ContentHash
+
+		out = append(out, entry)
+	}
+	return out, nil
 }
 
 // DeleteScan removes a scan and its files.
