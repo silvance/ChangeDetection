@@ -49,6 +49,14 @@ Useful flags:
 --data ~/.pixelsentinel data directory (default $XDG_DATA_HOME/pixelsentinel)
 ```
 
+### Desktop, native window (`desktop/native/`)
+A thin OS-WebView wrapper that opens PixelSentinel in a real native
+window instead of a browser tab. Uses the headless `pixelsentinel`
+binary as a subprocess, so it inherits everything — same library, same
+API, same UI. Build deps differ per OS (CGO + WebKit2GTK / WebView2 /
+WKWebView). See [`desktop/native/README.md`](desktop/native/README.md)
+for the per-platform recipe.
+
 ## Phone → desktop: Evidence Packs
 
 The phone exports any saved scan as an **Evidence Pack v1** — a single zip
