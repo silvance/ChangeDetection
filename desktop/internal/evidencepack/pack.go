@@ -39,6 +39,33 @@ type Manifest struct {
 	Params     Params     `json:"params"`
 	Warp       *Warp      `json:"warp,omitempty"`
 	Files      FilesIndex `json:"files"`
+
+	// ── Signed-pack fields (added in v1.1, all optional for back-compat) ──
+	// Digests is what the signature commits to: signing the manifest covers
+	// the file bytes via these hashes, not the bytes directly.
+	Digests *Digests `json:"digests,omitempty"`
+	// Signer identifies the producer of this pack. Public key is X.509
+	// SubjectPublicKeyInfo, base64-encoded. Alg is currently always
+	// "ecdsa-p256-sha256".
+	Signer *Signer `json:"signer,omitempty"`
+	// Signature is base64(DER ECDSA(r,s)) over the canonical signing
+	// payload (see SigningPayload). Empty for unsigned packs.
+	Signature string `json:"signature,omitempty"`
+}
+
+// Digests are SHA-256 hashes of the carried file bytes, prefixed with
+// "sha256:". Stored in the manifest so the signature commits to file
+// content without needing to embed the bytes in the signed payload.
+type Digests struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
+	Result string `json:"result,omitempty"`
+}
+
+// Signer identifies who produced the pack.
+type Signer struct {
+	Alg       string `json:"alg"`       // "ecdsa-p256-sha256"
+	PublicKey string `json:"publicKey"` // base64 X.509 SubjectPublicKeyInfo
 }
 
 // Stats mirrors the imgproc.Stats / Android AnalysisState.Success numbers.

@@ -21,6 +21,9 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import GppGoodRoundedIcon from '@mui/icons-material/GppGoodRounded';
+import GppMaybeRoundedIcon from '@mui/icons-material/GppMaybeRounded';
+import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { api, type Scan } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ImageComparisonTab } from '../components/ImageComparisonTab';
@@ -154,6 +157,7 @@ export function ScanDetailPage({ caseId, scanId, onBack }: Props) {
           <Grid item xs={12} md={4}>
             <Stack spacing={2}>
               <StatsCard scan={scan} />
+              <SignatureCard scan={scan} />
               <ParamsCard scan={scan} />
               <ChainCard scan={scan} />
             </Stack>
@@ -324,6 +328,80 @@ function EditMetadataDialog({
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+function SignatureCard({ scan }: { scan: Scan }) {
+  type Status = {
+    icon: React.ReactNode;
+    label: string;
+    color: 'success' | 'warning' | 'default' | 'error';
+    sub: string;
+  };
+  let status: Status;
+  if (scan.signed && scan.verified) {
+    status = {
+      icon: <GppGoodRoundedIcon fontSize="small" />,
+      label: 'Signed and verified',
+      color: 'success',
+      sub: 'Bytes match the producer\'s signature.',
+    };
+  } else if (scan.signed && !scan.verified) {
+    status = {
+      icon: <GppMaybeRoundedIcon fontSize="small" />,
+      label: 'Signature failed',
+      color: 'error',
+      sub: 'Pack was signed but the signature did not validate. Treat with care.',
+    };
+  } else {
+    status = {
+      icon: <HelpOutlineRoundedIcon fontSize="small" />,
+      label: 'Unsigned',
+      color: 'warning',
+      sub: 'No producer signature was attached. Tampering before import cannot be detected.',
+    };
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+        Producer signature
+      </Typography>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.25 }}>
+        <Chip
+          icon={status.icon as React.ReactElement}
+          label={status.label}
+          color={status.color === 'default' ? undefined : status.color}
+          size="small"
+          variant={scan.signed && scan.verified ? 'filled' : 'outlined'}
+        />
+      </Stack>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: 'block', mt: 1 }}
+      >
+        {status.sub}
+      </Typography>
+      {scan.signerFingerprint && (
+        <Box sx={{ mt: 1.25 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Fingerprint
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: 12,
+              wordBreak: 'break-all',
+              mt: 0.25,
+            }}
+          >
+            {scan.signerFingerprint}
+          </Typography>
+        </Box>
+      )}
+    </Paper>
   );
 }
 

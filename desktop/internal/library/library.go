@@ -71,6 +71,16 @@ type Scan struct {
 	// chronological lookup), or empty for the first scan in a case.
 	ContentHash string `json:"contentHash"`
 	PrevHash    string `json:"prevHash,omitempty"`
+
+	// ── Producer signature (from the imported Evidence Pack manifest) ────
+	// Signed is true when the pack carried a Signer + Signature pair.
+	// Verified is true when Signed is true AND the signature checked out
+	// against the embedded public key AND the manifest digests matched
+	// the actual file bytes.
+	Signed            bool   `json:"signed"`
+	Verified          bool   `json:"verified"`
+	SignerFingerprint string `json:"signerFingerprint,omitempty"`
+	SignerPublicKey   string `json:"signerPublicKey,omitempty"`
 }
 
 // ScanStats mirrors the analysis numbers produced by the imgproc core.

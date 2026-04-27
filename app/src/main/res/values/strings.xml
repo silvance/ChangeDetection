@@ -75,6 +75,11 @@
     <string name="msg_send_in_progress">Sending to PixelSentinel…</string>
     <string name="msg_send_ok">Uploaded to PixelSentinel.</string>
     <string name="msg_send_failed">Upload failed: %1$s</string>
+
+    <!-- Phone signing key (Settings) -->
+    <string name="label_signing_section">PHONE SIGNING KEY</string>
+    <string name="label_signing_help">Every Evidence Pack this phone exports is signed with an ECDSA P-256 key in the phone\'s secure element. The desktop verifies the signature on import and shows this fingerprint alongside imported scans so you can confirm the producer.</string>
+    <string name="label_signing_fingerprint">FINGERPRINT</string>
     <string name="label_change_pct">%1$d%% CHANGE</string>
     <string name="label_change_px">%1$d PX</string>
     <string name="label_regions">%1$d REGIONS</string>

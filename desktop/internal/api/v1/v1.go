@@ -320,6 +320,18 @@ func (h *handlers) importPack(c *gin.Context) {
 		return
 	}
 
+	// Verify the signature/digests if present. We do NOT reject signed-but-
+	// failed packs at the HTTP layer — the operator still wants to see them
+	// to diagnose what happened — but we do record the verdict on the scan
+	// so the UI can flag it. Plain corruption (digest mismatch on an
+	// unsigned pack with digests) is the one case we reject up front.
+	verify, _ := evidencepack.Verify(pack)
+	if !verify.Signed && pack.Manifest.Digests != nil && verify.Reason != "" {
+		fail(c, http.StatusUnprocessableEntity,
+			fmt.Errorf("evidence pack failed integrity check: %s", verify.Reason))
+		return
+	}
+
 	if caseID == "" {
 		// Auto-create a case if the caller didn't pick one.
 		name := strings.TrimSpace(pack.Manifest.Label)
@@ -337,6 +349,11 @@ func (h *handlers) importPack(c *gin.Context) {
 	captured, _ := time.Parse(time.RFC3339, pack.Manifest.CapturedAt)
 	if captured.IsZero() {
 		captured = time.Now().UTC()
+	}
+
+	signerKey := ""
+	if pack.Manifest.Signer != nil {
+		signerKey = pack.Manifest.Signer.PublicKey
 	}
 
 	scan, err := h.lib.AddScan(caseID, library.Scan{
@@ -361,6 +378,10 @@ func (h *handlers) importPack(c *gin.Context) {
 			HighlightB:     pack.Manifest.Params.HighlightB,
 			HighlightAlpha: pack.Manifest.Params.HighlightAlpha,
 		},
+		Signed:            verify.Signed,
+		Verified:          verify.Verified,
+		SignerFingerprint: verify.SignerFingerprint,
+		SignerPublicKey:   signerKey,
 	}, library.ScanInputFiles{
 		BeforeJPG: pack.BeforeJPG,
 		AfterJPG:  pack.AfterJPG,

@@ -72,6 +72,14 @@ export interface Scan {
   contentHash: string;
   /** Previous scan's contentHash in the same case, or empty for first. */
   prevHash?: string;
+  /** True when the imported pack carried a Signer + Signature pair. */
+  signed: boolean;
+  /** True when the signature checked out and digests matched the bytes. */
+  verified: boolean;
+  /** Lowercase 16-hex-char identifier for the producer's public key. */
+  signerFingerprint?: string;
+  /** Base64 X.509 SPKI of the producer's public key (raw, for trust UI). */
+  signerPublicKey?: string;
 }
 
 export interface ScanPatch {

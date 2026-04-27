@@ -8,6 +8,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.tscm.changedetection.R
 import com.tscm.changedetection.databinding.FragmentSettingsBinding
+import com.tscm.changedetection.pairing.ManifestSigner
 import com.tscm.changedetection.pairing.PairingPrefs
 import com.tscm.changedetection.pairing.PixelSentinelClient
 import kotlinx.coroutines.launch
@@ -39,6 +40,16 @@ class SettingsFragment : Fragment() {
 
         binding.btnSave.setOnClickListener { savePairing(showStatus = true) }
         binding.btnTest.setOnClickListener { testPairing() }
+
+        // Generate or load the signing key off the main thread — Keystore
+        // ops can take a few hundred ms on first launch (especially when
+        // StrongBox attestation is involved).
+        viewLifecycleOwner.lifecycleScope.launch {
+            val fp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { ManifestSigner.fingerprint() }.getOrNull()
+            }
+            _binding?.txtSigningFingerprint?.text = fp ?: "—"
+        }
     }
 
     private fun savePairing(showStatus: Boolean) {
