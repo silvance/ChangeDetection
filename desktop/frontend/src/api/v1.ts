@@ -60,6 +60,8 @@ export interface Scan {
   id: string;
   caseId: string;
   label: string;
+  /** Optional grouping for the time-series view. Empty means "Untagged". */
+  target?: string;
   capturedAt: string;
   importedAt: string;
   source: string;
@@ -70,6 +72,11 @@ export interface Scan {
   contentHash: string;
   /** Previous scan's contentHash in the same case, or empty for first. */
   prevHash?: string;
+}
+
+export interface ScanPatch {
+  label?: string;
+  target?: string;
 }
 
 export interface LedgerEntry {
@@ -135,6 +142,12 @@ export const api = {
 
   getScan: (caseId: string, scanId: string) =>
     request<Scan>(`/cases/${caseId}/scans/${scanId}`),
+
+  patchScan: (caseId: string, scanId: string, patch: ScanPatch) =>
+    request<Scan>(`/cases/${caseId}/scans/${scanId}`, {
+      method: 'PATCH',
+      json: patch,
+    }),
 
   deleteScan: (caseId: string, scanId: string) =>
     request<void>(`/cases/${caseId}/scans/${scanId}`, { method: 'DELETE' }),

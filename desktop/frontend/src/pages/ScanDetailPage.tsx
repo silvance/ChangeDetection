@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardMedia from '@mui/material/CardMedia';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid';
+import IconButton from '@mui/material/IconButton';
 import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import { api, type Scan } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ImageComparisonTab } from '../components/ImageComparisonTab';
@@ -26,6 +35,7 @@ interface Props {
 export function ScanDetailPage({ caseId, scanId, onBack }: Props) {
   const [scan, setScan] = useState<Scan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +51,16 @@ export function ScanDetailPage({ caseId, scanId, onBack }: Props) {
       cancelled = true;
     };
   }, [caseId, scanId]);
+
+  const handleSaveEdit = async (label: string, target: string) => {
+    try {
+      const updated = await api.patchScan(caseId, scanId, { label, target });
+      setScan(updated);
+      setEditOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   if (error) {
     return (
@@ -69,9 +89,45 @@ export function ScanDetailPage({ caseId, scanId, onBack }: Props) {
     <Box>
       <PageHeader
         above={<BackLink onClick={onBack} />}
-        title={scan.label || 'Untitled scan'}
-        subtitle={`Captured ${formatAbsolute(scan.capturedAt)} · imported ${formatAbsolute(scan.importedAt)}`}
+        title={
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <span>{scan.label || 'Untitled scan'}</span>
+            <Tooltip title="Edit metadata">
+              <IconButton
+                size="small"
+                onClick={() => setEditOpen(true)}
+                sx={{ color: 'text.secondary' }}
+              >
+                <EditRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        }
+        subtitle={
+          <Stack direction="row" spacing={1} alignItems="center">
+            <span>
+              Captured {formatAbsolute(scan.capturedAt)} · imported{' '}
+              {formatAbsolute(scan.importedAt)}
+            </span>
+            {scan.target && (
+              <Chip
+                label={scan.target}
+                size="small"
+                color="primary"
+                variant="outlined"
+                sx={{ fontSize: 11 }}
+              />
+            )}
+          </Stack>
+        }
         actions={<Chip label={scan.source} size="small" variant="outlined" />}
+      />
+
+      <EditMetadataDialog
+        open={editOpen}
+        initial={{ label: scan.label, target: scan.target ?? '' }}
+        onCancel={() => setEditOpen(false)}
+        onSave={handleSaveEdit}
       />
 
       <Box sx={{ px: 4, py: 3 }}>
@@ -211,6 +267,63 @@ function ParamsCard({ scan }: { scan: Scan }) {
         />
       </Stack>
     </Paper>
+  );
+}
+
+function EditMetadataDialog({
+  open,
+  initial,
+  onCancel,
+  onSave,
+}: {
+  open: boolean;
+  initial: { label: string; target: string };
+  onCancel: () => void;
+  onSave: (label: string, target: string) => void;
+}) {
+  const [label, setLabel] = useState(initial.label);
+  const [target, setTarget] = useState(initial.target);
+
+  useEffect(() => {
+    if (open) {
+      setLabel(initial.label);
+      setTarget(initial.target);
+    }
+  }, [open, initial.label, initial.target]);
+
+  return (
+    <Dialog open={open} onClose={onCancel} fullWidth maxWidth="sm">
+      <DialogTitle>Edit scan metadata</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <TextField
+            autoFocus
+            label="Label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Target"
+            placeholder="e.g. Conference Room A — North Wall"
+            helperText="Group scans of the same place across visits to enable the time-series view."
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            fullWidth
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button
+          variant="contained"
+          onClick={() => onSave(label.trim(), target.trim())}
+          disabled={!label.trim()}
+        >
+          Save
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

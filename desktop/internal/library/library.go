@@ -53,6 +53,10 @@ type Scan struct {
 	ID         string     `json:"id"`
 	CaseID     string     `json:"caseId"`
 	Label      string     `json:"label"`
+	// Target groups scans of the same physical place across visits, so the
+	// time-series view can stack them. Empty string is treated as
+	// "Untagged" by the UI. Operators set it on the desktop after import.
+	Target     string     `json:"target,omitempty"`
 	CapturedAt time.Time  `json:"capturedAt"`
 	ImportedAt time.Time  `json:"importedAt"`
 	Source     string     `json:"source"`           // e.g. "phone:android"
@@ -557,6 +561,36 @@ func (l *Library) Ledger(caseID string) ([]LedgerEntry, error) {
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// ScanMetaPatch is the set of editable scan fields. nil = leave unchanged.
+type ScanMetaPatch struct {
+	Label  *string
+	Target *string
+}
+
+// UpdateScanMeta edits a scan's user-facing metadata (label / target).
+// Content-bearing fields (files, params, hashes, timestamps) are
+// immutable from this entry point — changing them would invalidate the
+// chain of custody.
+func (l *Library) UpdateScanMeta(caseID, scanID string, patch ScanMetaPatch) (*Scan, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	s, err := l.readScanLocked(caseID, scanID)
+	if err != nil {
+		return nil, err
+	}
+	if patch.Label != nil {
+		s.Label = *patch.Label
+	}
+	if patch.Target != nil {
+		s.Target = *patch.Target
+	}
+	if err := writeJSONAtomic(l.scanManifestPath(caseID, scanID), s); err != nil {
+		return nil, err
+	}
+	_ = l.touchCaseLocked(caseID)
+	return s, nil
 }
 
 // DeleteScan removes a scan and its files.

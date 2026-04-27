@@ -52,6 +52,7 @@ func Register(g *gin.RouterGroup, lib *library.Library, info ServerInfo) {
 	auth.GET("/cases/:caseId/scans", h.listScans)
 	auth.GET("/cases/:caseId/ledger", h.getLedger)
 	auth.GET("/cases/:caseId/scans/:scanId", h.getScan)
+	auth.PATCH("/cases/:caseId/scans/:scanId", h.patchScan)
 	auth.GET("/cases/:caseId/scans/:scanId/files/:name", h.getScanFile)
 	auth.DELETE("/cases/:caseId/scans/:scanId", h.deleteScan)
 
@@ -217,6 +218,30 @@ func (h *handlers) listScans(c *gin.Context) {
 
 func (h *handlers) getScan(c *gin.Context) {
 	s, err := h.lib.GetScan(c.Param("caseId"), c.Param("scanId"))
+	if err != nil {
+		fail(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, s)
+}
+
+type patchScanRequest struct {
+	// Pointers so we can distinguish "set to empty string" from "leave alone".
+	Label  *string `json:"label,omitempty"`
+	Target *string `json:"target,omitempty"`
+}
+
+func (h *handlers) patchScan(c *gin.Context) {
+	var req patchScanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, fmt.Errorf("invalid body: %w", err))
+		return
+	}
+	s, err := h.lib.UpdateScanMeta(
+		c.Param("caseId"),
+		c.Param("scanId"),
+		library.ScanMetaPatch{Label: req.Label, Target: req.Target},
+	)
 	if err != nil {
 		fail(c, http.StatusNotFound, err)
 		return

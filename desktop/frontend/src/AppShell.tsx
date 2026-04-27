@@ -16,6 +16,7 @@ export type Route =
   | { kind: 'cases' }
   | { kind: 'case'; caseId: string }
   | { kind: 'scan'; caseId: string; scanId: string }
+  | { kind: 'timeseries'; caseId: string; target: string }
   | { kind: 'quick' }
   | { kind: 'settings' };
 
@@ -42,7 +43,9 @@ interface AppShellProps {
 
 export function AppShell({ route, onNavigate, children }: AppShellProps) {
   const activeKey: NavItem['key'] =
-    route.kind === 'case' || route.kind === 'scan' ? 'cases' : route.kind;
+    route.kind === 'case' || route.kind === 'scan' || route.kind === 'timeseries'
+      ? 'cases'
+      : route.kind;
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
