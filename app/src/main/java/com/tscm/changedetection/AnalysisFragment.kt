@@ -102,14 +102,17 @@ class AnalysisFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.exportUris.collectLatest { uris ->
-                    if (uris != null) {
+                    if (uris != null && uris.isNotEmpty()) {
+                        // Single Evidence Pack zip — see TscmViewModel.exportAnalysis.
                         val shareIntent = Intent().apply {
-                            action = Intent.ACTION_SEND_MULTIPLE
-                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
-                            type = "image/*"
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_STREAM, uris.first())
+                            type = "application/zip"
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        startActivity(Intent.createChooser(shareIntent, "Export TSCM Evidence Package"))
+                        startActivity(
+                            Intent.createChooser(shareIntent, getString(R.string.title_export_pack))
+                        )
                         viewModel.resetExportUris()
                     }
                 }
@@ -119,6 +122,20 @@ class AnalysisFragment : Fragment() {
         // Fullscreen toggle
         binding.btnFullscreen.setOnClickListener {
             toggleFullscreen()
+        }
+
+        // Tap the ALIGNMENT ACTIVE badge to clear the active warp.
+        binding.txtWarpActive.setOnClickListener {
+            if (viewModel.hasActiveWarp()) {
+                viewModel.clearWarp()
+                binding.txtWarpActive.visibility = View.GONE
+                updateFabTint(false)
+                Toast.makeText(
+                    requireContext(),
+                    R.string.msg_alignment_cleared,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
 
         _binding?.magnifierView?.setup(binding.imgResult)
@@ -141,26 +158,32 @@ class AnalysisFragment : Fragment() {
 
     private fun showSaveDialog() {
         val input = EditText(requireContext())
-        input.hint = "Scan Location / Target"
+        input.hint = getString(R.string.hint_scan_location)
         val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        input.setText("Scan $timestamp")
+        input.setText(getString(R.string.label_scan_default, timestamp))
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Save to History")
+            .setTitle(R.string.dlg_save_history_title)
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val label = input.text.toString()
+            .setPositiveButton(R.string.dlg_save) { _, _ ->
+                val label = input.text.toString().trim()
+                if (label.isEmpty()) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.toast_label_required,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setPositiveButton
+                }
                 val state = viewModel.analysisState.value
                 val png = if (state is AnalysisState.Success) {
-                    // In a real app we'd get the actual PNG from the engine, 
-                    // for now we re-encode the bitmap if needed.
                     val stream = java.io.ByteArrayOutputStream()
                     state.highlightBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
                     stream.toByteArray()
                 } else null
                 viewModel.saveCurrentToHistory(requireContext(), db, label, png)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.label_cancel, null)
             .show()
     }
 
@@ -257,7 +280,6 @@ class AnalysisFragment : Fragment() {
 
         binding.btnColorRed.setOnClickListener {
             viewModel.highlightR = 255; viewModel.highlightG = 60; viewModel.highlightB = 60
-            updateFabTint(false)
         }
         binding.btnColorOrange.setOnClickListener {
             viewModel.highlightR = 255; viewModel.highlightG = 165; viewModel.highlightB = 0
@@ -284,6 +306,16 @@ class AnalysisFragment : Fragment() {
                             binding.progressBar.visibility = View.GONE
                             binding.btnAnalyze.isEnabled = true
                             binding.statsGroup.visibility = View.GONE
+
+                            // Clear any previous result so the user doesn't see
+                            // a stale highlight after clearing alignment or
+                            // loading a new pair of images.
+                            binding.imgResult.setImageDrawable(null)
+                            binding.imgResult.visibility = View.GONE
+                            binding.btnFullscreen.visibility = View.GONE
+                            _binding?.fabSave?.visibility = View.GONE
+                            _binding?.fabExport?.visibility = View.GONE
+                            binding.txtResized.visibility = View.GONE
 
                             // Show warp active indicator if a warp is applied
                             binding.txtWarpActive.visibility =

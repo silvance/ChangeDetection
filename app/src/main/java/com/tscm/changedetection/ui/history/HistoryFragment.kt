@@ -4,12 +4,18 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.tscm.changedetection.MainActivity
+import com.tscm.changedetection.R
 import com.tscm.changedetection.TscmViewModel
 import com.tscm.changedetection.databinding.FragmentHistoryBinding
 import com.tscm.changedetection.databinding.ItemHistoryCardBinding
@@ -19,7 +25,8 @@ import java.io.File
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 class HistoryFragment : Fragment() {
 
@@ -39,23 +46,86 @@ class HistoryFragment : Fragment() {
 
         val adapter = HistoryAdapter(
             lifecycleScope = viewLifecycleOwner.lifecycleScope,
+            onSend = { entity -> viewModel.sendSavedScanToDesktop(requireContext(), entity) },
             onDelete = { entity ->
-                lifecycleScope.launch { db.analysisDao().deleteById(entity.id) }
+                // Saved scans are evidence — require an explicit confirmation
+                // before destroying them.
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.dlg_delete_scan_title)
+                    .setMessage(getString(R.string.dlg_delete_scan_msg, entity.label))
+                    .setPositiveButton(R.string.dlg_delete) { _, _ ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            db.analysisDao().deleteById(entity.id)
+                            val dir = requireContext().filesDir
+                            runCatching { File(dir, entity.beforeFileName).delete() }
+                            runCatching { File(dir, entity.afterFileName).delete() }
+                            entity.resultFileName?.let { runCatching { File(dir, it).delete() } }
+                        }
+                    }
+                    .setNegativeButton(R.string.label_cancel, null)
+                    .show()
             },
             onSelect = { entity ->
                 viewModel.loadFromHistory(requireContext(), entity)
-                // Navigate back to Analysis (or Comparison) via the bottom nav
-                (activity as? MainActivity)?.findViewById<View>(com.tscm.changedetection.R.id.analysisFragment)?.performClick()
+                // Drive navigation through the BottomNavigationView so its
+                // visual selection follows the destination change. The view
+                // is wired up to the NavController in MainActivity.
+                requireActivity()
+                    .findViewById<BottomNavigationView>(R.id.bottom_nav)
+                    ?.selectedItemId = R.id.analysisFragment
             }
         )
 
         binding.recyclerHistory.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerHistory.adapter = adapter
 
-        lifecycleScope.launch {
-            db.analysisDao().getAllHistory().collectLatest { history ->
-                adapter.submitList(history)
-                binding.txtEmpty.visibility = if (history.isEmpty()) View.VISIBLE else View.GONE
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                db.analysisDao().getAllHistory().collectLatest { history ->
+                    adapter.submitList(history)
+                    binding.txtEmpty.visibility = if (history.isEmpty()) View.VISIBLE else View.GONE
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.sendStatus.collectLatest { status ->
+                    when (status) {
+                        com.tscm.changedetection.SendStatus.Idle -> Unit
+                        com.tscm.changedetection.SendStatus.NotPaired -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                R.string.msg_send_no_pairing,
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            viewModel.resetSendStatus()
+                        }
+                        is com.tscm.changedetection.SendStatus.Sending -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                R.string.msg_send_in_progress,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        is com.tscm.changedetection.SendStatus.Success -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                R.string.msg_send_ok,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            viewModel.resetSendStatus()
+                        }
+                        is com.tscm.changedetection.SendStatus.Failed -> {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                getString(R.string.msg_send_failed, status.message),
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            viewModel.resetSendStatus()
+                        }
+                    }
+                }
             }
         }
     }
@@ -68,17 +138,12 @@ class HistoryFragment : Fragment() {
 
 class HistoryAdapter(
     private val lifecycleScope: androidx.lifecycle.LifecycleCoroutineScope,
+    private val onSend: (AnalysisEntity) -> Unit,
     private val onDelete: (AnalysisEntity) -> Unit,
     private val onSelect: (AnalysisEntity) -> Unit
-) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
+) : ListAdapter<AnalysisEntity, HistoryAdapter.ViewHolder>(DIFF) {
 
-    private var items = listOf<AnalysisEntity>()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-
-    fun submitList(newItems: List<AnalysisEntity>) {
-        items = newItems
-        notifyDataSetChanged()
-    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemHistoryCardBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -86,11 +151,20 @@ class HistoryAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val item = items[position]
-        holder.bind(item)
+        holder.bind(getItem(position))
     }
 
-    override fun getItemCount(): Int = items.size
+    companion object {
+        private val DIFF = object : DiffUtil.ItemCallback<AnalysisEntity>() {
+            override fun areItemsTheSame(a: AnalysisEntity, b: AnalysisEntity) = a.id == b.id
+            override fun areContentsTheSame(a: AnalysisEntity, b: AnalysisEntity) =
+                a.label == b.label &&
+                a.timestamp == b.timestamp &&
+                a.changedPct == b.changedPct &&
+                a.regions == b.regions &&
+                a.resultFileName == b.resultFileName
+        }
+    }
 
     inner class ViewHolder(private val itemBinding: ItemHistoryCardBinding) : RecyclerView.ViewHolder(itemBinding.root) {
         private var job: kotlinx.coroutines.Job? = null
@@ -116,6 +190,7 @@ class HistoryAdapter(
                 }
             }
 
+            itemBinding.btnSend.setOnClickListener { onSend(item) }
             itemBinding.btnDelete.setOnClickListener { onDelete(item) }
             itemBinding.root.setOnClickListener { onSelect(item) }
         }

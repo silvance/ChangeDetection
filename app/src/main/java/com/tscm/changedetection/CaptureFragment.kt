@@ -31,6 +31,7 @@ class CaptureFragment : Fragment() {
     private val viewModel: TscmViewModel by activityViewModels()
 
     private var imageCapture: ImageCapture? = null
+    private var cameraProvider: ProcessCameraProvider? = null
     private lateinit var cameraExecutor: ExecutorService
 
     // Which slot we're filling — toggled by the Before/After buttons
@@ -122,6 +123,7 @@ class CaptureFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        stopCamera()
         cameraExecutor.shutdown()
         _binding = null
     }
@@ -165,7 +167,11 @@ class CaptureFragment : Fragment() {
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
+            // The Fragment may have been torn down before the future resolved.
+            if (_binding == null) return@addListener
+
+            val provider = cameraProviderFuture.get()
+            cameraProvider = provider
 
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
@@ -176,8 +182,8 @@ class CaptureFragment : Fragment() {
                 .build()
 
             try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
+                provider.unbindAll()
+                provider.bindToLifecycle(
                     viewLifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
@@ -196,6 +202,11 @@ class CaptureFragment : Fragment() {
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
+    private fun stopCamera() {
+        cameraProvider?.unbindAll()
+        imageCapture = null
+    }
+
     private fun takePhoto() {
         val imageCapture = imageCapture ?: return
 
@@ -211,10 +222,15 @@ class CaptureFragment : Fragment() {
                     if (capturingBefore) viewModel.setBefore(bytes)
                     else                 viewModel.setAfter(bytes)
 
-                    requireActivity().runOnUiThread {
+                    val activity = activity ?: return
+                    activity.runOnUiThread {
+                        if (_binding == null) return@runOnUiThread
                         resetButtonLabels()
                         binding.viewFinder.visibility = View.GONE
                         binding.btnShutter.visibility = View.GONE
+                        // Release camera so it stops draining battery while the user
+                        // reviews the captured image.
+                        stopCamera()
                         val label = if (capturingBefore) getString(R.string.label_before) else getString(R.string.label_after)
                         Toast.makeText(requireContext(), getString(R.string.toast_captured, label), Toast.LENGTH_SHORT).show()
                     }

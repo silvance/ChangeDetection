@@ -3,6 +3,8 @@ package com.tscm.changedetection
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tscmlib.Tscmlib
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 
@@ -48,6 +51,15 @@ sealed class AlternateState {
     data class Error(val message: String) : AlternateState()
 }
 
+/** State of an in-flight or completed upload of a saved scan to the desktop. */
+sealed class SendStatus {
+    object Idle : SendStatus()
+    object NotPaired : SendStatus()
+    data class Sending(val entityId: Int) : SendStatus()
+    data class Success(val entityId: Int, val caseId: String, val scanId: String) : SendStatus()
+    data class Failed(val entityId: Int, val message: String) : SendStatus()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ViewModel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +79,11 @@ class TscmViewModel : ViewModel() {
     // Set by WarpPerspective — replaces beforeBytes as the analysis input
     // when set, same as how the web app's state.Store works.
     private var warpedBeforeBytes: ByteArray? = null
+
+    // The point pairs that produced the active warp, retained so saved scans
+    // can record exactly which alignment was applied.
+    private var warpSrcJson: String? = null
+    private var warpDstJson: String? = null
 
     // Preview bitmaps shown in the capture UI (decoded once on capture)
     private val _beforeBitmap = MutableStateFlow<Bitmap?>(null)
@@ -107,12 +124,17 @@ class TscmViewModel : ViewModel() {
     private val _exportUris = MutableStateFlow<List<Uri>?>(null)
     val exportUris: StateFlow<List<Uri>?> = _exportUris.asStateFlow()
 
+    private val _sendStatus = MutableStateFlow<SendStatus>(SendStatus.Idle)
+    val sendStatus: StateFlow<SendStatus> = _sendStatus.asStateFlow()
+
     // ── Image setters (called from CaptureFragment) ───────────────────────────
 
     fun setBefore(jpegBytes: ByteArray) {
         val processedBytes = if (stripMetadata) stripExif(jpegBytes) else jpegBytes
         _beforeBytes.value = processedBytes
         warpedBeforeBytes = null // clear any previous warp
+        warpSrcJson = null
+        warpDstJson = null
         _analysisState.value = AnalysisState.Idle
         _alternateState.value = AlternateState.Idle
 
@@ -126,6 +148,8 @@ class TscmViewModel : ViewModel() {
         val processedBytes = if (stripMetadata) stripExif(jpegBytes) else jpegBytes
         _afterBytes.value = processedBytes
         warpedBeforeBytes = null
+        warpSrcJson = null
+        warpDstJson = null
         _analysisState.value = AnalysisState.Idle
         _alternateState.value = AlternateState.Idle
 
@@ -146,6 +170,10 @@ class TscmViewModel : ViewModel() {
     fun runAnalysis() {
         val before = warpedBeforeBytes ?: _beforeBytes.value ?: return
         val after = _afterBytes.value ?: return
+
+        // Drop the request if an analysis is already in flight — otherwise a
+        // user double-tap launches two coroutines that race on _analysisState.
+        if (_analysisState.value is AnalysisState.Running) return
 
         viewModelScope.launch {
             _analysisState.value = AnalysisState.Running
@@ -195,6 +223,8 @@ class TscmViewModel : ViewModel() {
     fun runAlternateAnalysis() {
         val before = warpedBeforeBytes ?: _beforeBytes.value ?: return
         val after = _afterBytes.value ?: return
+
+        if (_alternateState.value is AlternateState.Running) return
 
         viewModelScope.launch {
             _alternateState.value = AlternateState.Running
@@ -259,6 +289,10 @@ class TscmViewModel : ViewModel() {
             }
 
             warpedBeforeBytes = warpedResult?.first
+            if (warpedBeforeBytes != null) {
+                warpSrcJson = srcPtsJson
+                warpDstJson = dstPtsJson
+            }
             _analysisState.value = AnalysisState.Idle  // force re-run with new warp
             onComplete(warpedResult?.second)
         }
@@ -266,6 +300,8 @@ class TscmViewModel : ViewModel() {
 
     fun clearWarp() {
         warpedBeforeBytes = null
+        warpSrcJson = null
+        warpDstJson = null
         _analysisState.value = AnalysisState.Idle
     }
 
@@ -284,11 +320,30 @@ class TscmViewModel : ViewModel() {
             withContext(Dispatchers.Main) {
                 _beforeBytes.value = before
                 _afterBytes.value = after
+                // Restore the alignment that was used so the user can see it
+                // was active. We don't auto re-warp here — the saved result
+                // bitmap is authoritative; if the user re-aligns and re-runs,
+                // they'll start from a known state.
                 warpedBeforeBytes = null
-                
+                warpSrcJson = entity.warpSrcJson
+                warpDstJson = entity.warpDstJson
+
+                // Restore the parameters used for this scan so further
+                // analysis on this evidence reproduces the same numbers.
+                strength = entity.strength
+                morphSize = entity.morphSize
+                closeSize = entity.closeSize
+                minRegion = entity.minRegion
+                preBlurSigma = entity.preBlurSigma
+                normalizeLuma = entity.normalizeLuma
+                highlightR = entity.highlightR
+                highlightG = entity.highlightG
+                highlightB = entity.highlightB
+                highlightAlpha = entity.highlightAlpha
+
                 _beforeBitmap.value = beforeBmp
                 _afterBitmap.value = afterBmp
-                
+
                 if (resultBmp != null) {
                     _analysisState.value = AnalysisState.Success(
                         highlightBitmap = resultBmp,
@@ -333,7 +388,19 @@ class TscmViewModel : ViewModel() {
                 resultFileName = resultName,
                 changedPct = pct,
                 changedPixels = pixels,
-                regions = regions
+                regions = regions,
+                strength = strength,
+                morphSize = morphSize,
+                closeSize = closeSize,
+                minRegion = minRegion,
+                preBlurSigma = preBlurSigma,
+                normalizeLuma = normalizeLuma,
+                highlightR = highlightR,
+                highlightG = highlightG,
+                highlightB = highlightB,
+                highlightAlpha = highlightAlpha,
+                warpSrcJson = warpSrcJson,
+                warpDstJson = warpDstJson
             )
             db.analysisDao().insert(entity)
             _saveStatus.value = true
@@ -344,10 +411,18 @@ class TscmViewModel : ViewModel() {
         _saveStatus.value = null
     }
 
+    /**
+     * Builds an "Evidence Pack v1" zip — a single file containing
+     * manifest.json + before.jpg + after.jpg (+ result.png) — and surfaces
+     * its content URI in [exportUris]. The PixelSentinel desktop server
+     * accepts the same zip at POST /api/v1/import/pack, and any other
+     * channel (AirDrop, USB, email) works equally well because there's
+     * just one self-describing file to send.
+     */
     fun exportAnalysis(context: Context, label: String) {
         val state = _analysisState.value
         if (state !is AnalysisState.Success) return
-        
+
         val before = _beforeBytes.value ?: return
         val after = _afterBytes.value ?: return
 
@@ -355,34 +430,141 @@ class TscmViewModel : ViewModel() {
             try {
                 val cachePath = File(context.cacheDir, "analysis_export")
                 cachePath.mkdirs()
-                
-                // Clear old exports
                 cachePath.listFiles()?.forEach { it.delete() }
 
-                val uris = mutableListOf<Uri>()
-                val timestamp = label.replace(" ", "_")
+                val safeLabel = label.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "scan" }
+                val timestamp = System.currentTimeMillis()
+                val zipFile = File(cachePath, "${safeLabel}_${timestamp}.pixelsentinel.zip")
 
-                // 1. Export Analysis Result
-                val resFile = File(cachePath, "REPORT_${timestamp}_RESULT.png")
-                FileOutputStream(resFile).use { state.highlightBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", resFile))
+                val resultPng = java.io.ByteArrayOutputStream().use {
+                    state.highlightBitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    it.toByteArray()
+                }
 
-                // 2. Export Before Photo
-                val beforeFile = File(cachePath, "REPORT_${timestamp}_BEFORE.jpg")
-                FileOutputStream(beforeFile).use { it.write(before) }
-                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", beforeFile))
+                val packBytes = com.tscm.changedetection.pairing.EvidencePack.build(
+                    label = label,
+                    capturedAtMs = timestamp,
+                    params = currentParams(),
+                    stats = com.tscm.changedetection.pairing.EvidencePack.Stats(
+                        changedPct = state.changedPct,
+                        changedPixels = state.changedPixels,
+                        regions = state.regions
+                    ),
+                    beforeJpg = before,
+                    afterJpg = after,
+                    resultPng = resultPng,
+                    warp = currentWarp()
+                )
+                zipFile.writeBytes(packBytes)
 
-                // 3. Export After Photo
-                val afterFile = File(cachePath, "REPORT_${timestamp}_AFTER.jpg")
-                FileOutputStream(afterFile).use { it.write(after) }
-                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", afterFile))
-
-                _exportUris.value = uris
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    zipFile
+                )
+                _exportUris.value = listOf(uri)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
     }
+
+    /**
+     * Build an Evidence Pack from a saved history entity (reading bytes
+     * from filesDir) and POST it to the paired PixelSentinel desktop.
+     * Reports progress via [sendStatus].
+     */
+    fun sendSavedScanToDesktop(context: Context, entity: com.tscm.changedetection.db.AnalysisEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _sendStatus.value = SendStatus.Sending(entity.id)
+
+            val prefs = com.tscm.changedetection.pairing.PairingPrefs.get(context)
+            if (!prefs.isConfigured) {
+                _sendStatus.value = SendStatus.NotPaired
+                return@launch
+            }
+
+            val packBytes = runCatching { buildPackFromEntity(context, entity) }
+                .getOrElse { e ->
+                    _sendStatus.value = SendStatus.Failed(entity.id, e.message ?: "build failed")
+                    return@launch
+                }
+
+            val res = com.tscm.changedetection.pairing.PixelSentinelClient.importPack(
+                host = prefs.host,
+                token = prefs.token,
+                packBytes = packBytes
+            )
+            res.fold(
+                onSuccess = { ok -> _sendStatus.value = SendStatus.Success(entity.id, ok.caseId, ok.scanId) },
+                onFailure = { e -> _sendStatus.value = SendStatus.Failed(entity.id, e.message ?: "?") }
+            )
+        }
+    }
+
+    private fun buildPackFromEntity(
+        context: Context,
+        entity: com.tscm.changedetection.db.AnalysisEntity
+    ): ByteArray {
+        val before = File(context.filesDir, entity.beforeFileName).readBytes()
+        val after = File(context.filesDir, entity.afterFileName).readBytes()
+        val result = entity.resultFileName?.let { File(context.filesDir, it).readBytes() }
+
+        return com.tscm.changedetection.pairing.EvidencePack.build(
+            label = entity.label,
+            capturedAtMs = entity.timestamp,
+            params = com.tscm.changedetection.pairing.EvidencePack.Params(
+                strength = entity.strength,
+                morphSize = entity.morphSize,
+                closeSize = entity.closeSize,
+                minRegion = entity.minRegion,
+                preBlurSigma = entity.preBlurSigma,
+                normalizeLuma = entity.normalizeLuma,
+                highlightR = entity.highlightR,
+                highlightG = entity.highlightG,
+                highlightB = entity.highlightB,
+                highlightAlpha = entity.highlightAlpha
+            ),
+            stats = com.tscm.changedetection.pairing.EvidencePack.Stats(
+                changedPct = entity.changedPct,
+                changedPixels = entity.changedPixels,
+                regions = entity.regions
+            ),
+            beforeJpg = before,
+            afterJpg = after,
+            resultPng = result,
+            warp = entity.warpSrcJson?.let { src ->
+                entity.warpDstJson?.let { dst ->
+                    com.tscm.changedetection.pairing.EvidencePack.Warp(src, dst)
+                }
+            }
+        )
+    }
+
+    fun resetSendStatus() {
+        _sendStatus.value = SendStatus.Idle
+    }
+
+    private fun currentParams(): com.tscm.changedetection.pairing.EvidencePack.Params =
+        com.tscm.changedetection.pairing.EvidencePack.Params(
+            strength = strength,
+            morphSize = morphSize,
+            closeSize = closeSize,
+            minRegion = minRegion,
+            preBlurSigma = preBlurSigma,
+            normalizeLuma = normalizeLuma,
+            highlightR = highlightR,
+            highlightG = highlightG,
+            highlightB = highlightB,
+            highlightAlpha = highlightAlpha
+        )
+
+    private fun currentWarp(): com.tscm.changedetection.pairing.EvidencePack.Warp? =
+        warpSrcJson?.let { src ->
+            warpDstJson?.let { dst ->
+                com.tscm.changedetection.pairing.EvidencePack.Warp(src, dst)
+            }
+        }
 
     fun resetExportUris() {
         _exportUris.value = null
@@ -393,20 +575,77 @@ class TscmViewModel : ViewModel() {
     private fun stripExif(bytes: ByteArray): ByteArray {
         return try {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return bytes
+
+            // BitmapFactory ignores EXIF, so any rotation tag stays only as
+            // metadata. If we just strip metadata we'd end up with a sideways
+            // image whenever the source was a portrait phone shot or a
+            // gallery import. Apply the rotation to actual pixels first.
+            val rotated = applyExifRotation(bytes, bitmap)
+
             val stream = java.io.ByteArrayOutputStream()
-            // Re-encode as JPEG 95. This effectively creates a new image with zero original metadata.
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 95, stream)
+            rotated.compress(Bitmap.CompressFormat.JPEG, 95, stream)
             val result = stream.toByteArray()
-            
-            // Explicitly hint to GC and zero out temporary bitmap if possible
-            bitmap.recycle()
-            
+
+            if (rotated !== bitmap) bitmap.recycle()
+            rotated.recycle()
+
             result
         } catch (e: Exception) {
             bytes
         }
     }
 
-    private fun decodeBitmap(bytes: ByteArray): Bitmap? =
-        runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+    private fun applyExifRotation(bytes: ByteArray, bitmap: Bitmap): Bitmap {
+        return try {
+            val orientation = ByteArrayInputStream(bytes).use { stream ->
+                ExifInterface(stream).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            }
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+                ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(270f); matrix.postScale(-1f, 1f) }
+                else -> return bitmap
+            }
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        } catch (e: Exception) {
+            bitmap
+        }
+    }
+
+    /**
+     * Decodes bytes into a bitmap **for display only**, sub-sampled to roughly
+     * [PREVIEW_MAX_DIM] on the long side. The original bytes are still held
+     * untouched in the StateFlows and are what the Go analysis library reads,
+     * so we don't lose precision where it matters — we only avoid keeping
+     * 50–200 MB ARGB bitmaps in memory for the on-screen previews.
+     */
+    private fun decodeBitmap(bytes: ByteArray): Bitmap? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return@runCatching null
+
+        var sample = 1
+        val maxDim = maxOf(w, h)
+        while (maxDim / (sample * 2) >= PREVIEW_MAX_DIM) sample *= 2
+
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+    }.getOrNull()
+
+    private companion object {
+        // Long-side cap for preview bitmaps. Anything beyond this is invisible
+        // detail on a phone screen and a fast path to OOM on big-sensor shots.
+        const val PREVIEW_MAX_DIM = 2048
+    }
 }

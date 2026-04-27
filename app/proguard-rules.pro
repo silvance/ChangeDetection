@@ -1,21 +1,33 @@
 # Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep useful stack traces in crashlytics-style logs.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ---------------------------------------------------------------------------
+# Gomobile / tscmlib (Go-compiled AAR)
+# Gobind classes are accessed via JNI; R8 must not rename or strip them.
+# ---------------------------------------------------------------------------
+-keep class go.** { *; }
+-keep class tscmlib.** { *; }
+-keepclassmembers class tscmlib.** { *; }
+-dontwarn go.**
+-dontwarn tscmlib.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ---------------------------------------------------------------------------
+# Kotlin coroutines / reflection bits used by StateFlow + ViewModel
+# ---------------------------------------------------------------------------
+-keepclassmembernames class kotlinx.** { volatile <fields>; }
+-dontwarn kotlinx.coroutines.debug.**
+
+# ---------------------------------------------------------------------------
+# CameraX
+# ---------------------------------------------------------------------------
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**
+
+# ---------------------------------------------------------------------------
+# AndroidX Navigation, Lifecycle, Material — covered by their consumer rules,
+# but keep generated databinding bridges for view binding lookups.
+# ---------------------------------------------------------------------------
+-keep class com.tscm.changedetection.databinding.** { *; }

@@ -30,4 +30,9 @@
         android:name="com.tscm.changedetection.AlternateAnalysisFragment"
         android:label="Diagnostics" />
 
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.tscm.changedetection.ui.settings.SettingsFragment"
+        android:label="Settings" />
+
 </navigation>
