@@ -11,8 +11,24 @@
         <domain-prefix>10.</domain-prefix>
         <!-- 192.168.0.0/16 -->
         <domain-prefix>192.168.</domain-prefix>
-        <!-- 172.16.0.0/12 — coarse: covers 172.16-31.* but also 172.0-15.* and 172.32-255.* -->
-        <domain-prefix>172.</domain-prefix>
+        <!-- 172.16.0.0/12 — enumerated precisely so we don't leak cleartext
+             to 172.0-15.* or 172.32-255.* (which are not private). -->
+        <domain-prefix>172.16.</domain-prefix>
+        <domain-prefix>172.17.</domain-prefix>
+        <domain-prefix>172.18.</domain-prefix>
+        <domain-prefix>172.19.</domain-prefix>
+        <domain-prefix>172.20.</domain-prefix>
+        <domain-prefix>172.21.</domain-prefix>
+        <domain-prefix>172.22.</domain-prefix>
+        <domain-prefix>172.23.</domain-prefix>
+        <domain-prefix>172.24.</domain-prefix>
+        <domain-prefix>172.25.</domain-prefix>
+        <domain-prefix>172.26.</domain-prefix>
+        <domain-prefix>172.27.</domain-prefix>
+        <domain-prefix>172.28.</domain-prefix>
+        <domain-prefix>172.29.</domain-prefix>
+        <domain-prefix>172.30.</domain-prefix>
+        <domain-prefix>172.31.</domain-prefix>
         <!-- Link-local 169.254.0.0/16 -->
         <domain-prefix>169.254.</domain-prefix>
     </domain-config>

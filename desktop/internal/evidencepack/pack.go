@@ -164,6 +164,11 @@ func Read(zipBytes []byte) (*Pack, error) {
 	if m.Files.Before == "" || m.Files.After == "" {
 		return nil, errors.New("manifest missing before/after file names")
 	}
+	// Manifest fields come from an untrusted producer. Clamp the numeric
+	// ones that flow into image processing or render directly into the UI
+	// so a malformed pack can't crash imgproc with eg. highlightR=-1 or
+	// strength=2_000_000_000.
+	clampManifest(&m)
 
 	beforeBytes, ok := files[m.Files.Before]
 	if !ok {
@@ -187,6 +192,53 @@ func Read(zipBytes []byte) (*Pack, error) {
 		AfterJPG:  afterBytes,
 		ResultPNG: resultBytes,
 	}, nil
+}
+
+// clampManifest normalises numeric manifest fields whose ranges are
+// well-known to the producer. Out-of-range values from an untrusted
+// pack don't fail the import (they're often just a producer-version
+// mismatch) but we don't let them flow into imgproc / the UI as-is.
+func clampManifest(m *Manifest) {
+	m.Params.Strength = clampInt(m.Params.Strength, 0, 100)
+	m.Params.MorphSize = clampInt(m.Params.MorphSize, 0, 50)
+	m.Params.CloseSize = clampInt(m.Params.CloseSize, 0, 50)
+	m.Params.MinRegion = clampInt(m.Params.MinRegion, 0, 100_000)
+	m.Params.PreBlurSigma = clampFloat(m.Params.PreBlurSigma, 0, 16)
+	m.Params.HighlightR = clampInt(m.Params.HighlightR, 0, 255)
+	m.Params.HighlightG = clampInt(m.Params.HighlightG, 0, 255)
+	m.Params.HighlightB = clampInt(m.Params.HighlightB, 0, 255)
+	m.Params.HighlightAlpha = clampFloat(m.Params.HighlightAlpha, 0, 1)
+
+	// Stats are reported, not consumed by imgproc, but a percentage > 100
+	// or negative pixels would just be wrong on the face of it.
+	m.Stats.ChangedPct = clampFloat(m.Stats.ChangedPct, 0, 100)
+	if m.Stats.ChangedPixels < 0 {
+		m.Stats.ChangedPixels = 0
+	}
+	if m.Stats.Regions < 0 {
+		m.Stats.Regions = 0
+	}
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func clampFloat(v, lo, hi float64) float64 {
+	// NaN slips through both branches; map it to lo for safety.
+	if v != v || v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // cleanName trims any leading "./" and rejects anything containing ".." or

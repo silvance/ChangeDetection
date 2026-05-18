@@ -301,6 +301,14 @@ func (h *handlers) importPack(c *gin.Context) {
 			fail(c, http.StatusBadRequest, fmt.Errorf("missing pack field: %w", err))
 			return
 		}
+		// Gin spills multipart bodies larger than DefaultMaxMemory (32MiB)
+		// into temp files. Nothing in the framework removes them — clean
+		// up explicitly so we don't leak disk on every signed upload.
+		defer func() {
+			if c.Request.MultipartForm != nil {
+				_ = c.Request.MultipartForm.RemoveAll()
+			}
+		}()
 		f, err := fh.Open()
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
