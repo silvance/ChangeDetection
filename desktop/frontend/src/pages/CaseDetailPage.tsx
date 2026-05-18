@@ -17,9 +17,13 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import GppGoodRoundedIcon from '@mui/icons-material/GppGoodRounded';
+import GppMaybeRoundedIcon from '@mui/icons-material/GppMaybeRounded';
+import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
+import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
-import { api, type Case, type Scan } from '../api/v1';
+import { api, type Case, type LedgerEntry, type Scan } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
 import { formatAbsolute, formatInt, formatPct, formatRelative } from '../utils/format';
 
@@ -42,18 +46,37 @@ export function CaseDetailPage({
 }: Props) {
   const [theCase, setTheCase] = useState<Case | null>(null);
   const [scans, setScans] = useState<Scan[] | null>(null);
+  const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      const [c, s] = await Promise.all([api.getCase(caseId), api.listScans(caseId)]);
+      // Ledger gives us per-scan chain-broken / verified flags; fetched
+      // alongside the scan list so the table can flag chain breaks
+      // without a second round-trip per row. Ledger failures are
+      // non-fatal — the table still renders, it just loses the chain
+      // overlay for that refresh.
+      const [c, s, l] = await Promise.all([
+        api.getCase(caseId),
+        api.listScans(caseId),
+        api.getLedger(caseId).catch(() => [] as LedgerEntry[]),
+      ]);
       setTheCase(c);
       setScans(s);
+      setLedger(l);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
   };
+
+  // Index ledger entries by scanId so each row can look up its
+  // chain-broken / verify-error status in O(1).
+  const ledgerByScan = useMemo(() => {
+    const m = new Map<string, LedgerEntry>();
+    for (const e of ledger) m.set(e.scanId, e);
+    return m;
+  }, [ledger]);
 
   useEffect(() => {
     void refresh();
@@ -176,6 +199,7 @@ export function CaseDetailPage({
                 key={g.target}
                 target={g.target}
                 scans={g.scans}
+                ledgerByScan={ledgerByScan}
                 onOpenScan={onOpenScan}
                 onOpenTimeSeries={onOpenTimeSeries}
                 onDeleteScan={handleDeleteScan}
@@ -191,12 +215,14 @@ export function CaseDetailPage({
 function ScanGroup({
   target,
   scans,
+  ledgerByScan,
   onOpenScan,
   onOpenTimeSeries,
   onDeleteScan,
 }: {
   target: string;
   scans: Scan[];
+  ledgerByScan: Map<string, LedgerEntry>;
   onOpenScan: (scanId: string) => void;
   onOpenTimeSeries: (target: string) => void;
   onDeleteScan: (scanId: string, label: string) => void;
@@ -258,71 +284,184 @@ function ScanGroup({
         <Table size="small">
           <TableHead>
             <TableRow>
+              <TableCell sx={{ width: 28 }} />
               <TableCell>Label</TableCell>
               <TableCell>Captured</TableCell>
-              <TableCell align="right">Change</TableCell>
-              <TableCell align="right">Pixels</TableCell>
+              <TableCell sx={{ width: 200 }}>Change</TableCell>
               <TableCell align="right">Regions</TableCell>
+              <TableCell sx={{ width: 200 }}>Producer</TableCell>
               <TableCell>Source</TableCell>
-              <TableCell align="right">Result</TableCell>
               <TableCell align="right" />
             </TableRow>
           </TableHead>
           <TableBody>
-            {ordered.map((s) => (
-              <TableRow
-                key={s.id}
-                hover
-                sx={{ cursor: 'pointer' }}
-                onClick={() => onOpenScan(s.id)}
-              >
-                <TableCell>
-                  <Typography variant="body2" fontWeight={500}>
-                    {s.label || 'Untitled scan'}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  <Tooltip title={formatAbsolute(s.capturedAt)}>
-                    <span>{formatRelative(s.capturedAt)}</span>
-                  </Tooltip>
-                </TableCell>
-                <TableCell align="right">
-                  <Typography variant="body2" color="primary.main" fontWeight={500}>
-                    {formatPct(s.stats.changedPct)}
-                  </Typography>
-                </TableCell>
-                <TableCell align="right">{formatInt(s.stats.changedPixels)}</TableCell>
-                <TableCell align="right">{formatInt(s.stats.regions)}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={s.source}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: 11 }}
-                  />
-                </TableCell>
-                <TableCell align="right">
-                  {s.files.result ? (
-                    <Chip label="✓" size="small" color="success" variant="outlined" />
-                  ) : (
-                    <Chip label="—" size="small" variant="outlined" />
-                  )}
-                </TableCell>
-                <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                  <Tooltip title="Delete scan">
-                    <IconButton
+            {ordered.map((s) => {
+              const entry = ledgerByScan.get(s.id);
+              return (
+                <TableRow
+                  key={s.id}
+                  hover
+                  sx={{ cursor: 'pointer' }}
+                  onClick={() => onOpenScan(s.id)}
+                >
+                  <TableCell sx={{ pr: 0 }}>
+                    <ChainStatusCell entry={entry} />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={500}>
+                      {s.label || 'Untitled scan'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Tooltip title={formatAbsolute(s.capturedAt)}>
+                      <span>{formatRelative(s.capturedAt)}</span>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <ChangeBar pct={s.stats.changedPct} pixels={s.stats.changedPixels} />
+                  </TableCell>
+                  <TableCell align="right">{formatInt(s.stats.regions)}</TableCell>
+                  <TableCell>
+                    <ProducerCell scan={s} />
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={s.source}
                       size="small"
-                      onClick={() => onDeleteScan(s.id, s.label)}
-                    >
-                      <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </TableCell>
-              </TableRow>
-            ))}
+                      variant="outlined"
+                      sx={{ fontSize: 11 }}
+                    />
+                  </TableCell>
+                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                    <Tooltip title="Delete scan">
+                      <IconButton
+                        size="small"
+                        onClick={() => onDeleteScan(s.id, s.label)}
+                      >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </TableContainer>
     </Box>
+  );
+}
+
+// ChainStatusCell warns about a broken chain. A broken chain means the
+// scan's prevHash didn't link cleanly to the previous scan in the case
+// — usually because a scan was deleted or reordered out-of-band. We
+// surface this in the leftmost gutter so it can't be missed.
+function ChainStatusCell({ entry }: { entry: LedgerEntry | undefined }) {
+  if (!entry) return null;
+  if (entry.chainBroken) {
+    return (
+      <Tooltip title="Chain of custody broken — prev-hash does not match the preceding scan in this case.">
+        <LinkOffRoundedIcon fontSize="small" sx={{ color: 'error.main' }} />
+      </Tooltip>
+    );
+  }
+  if (entry.verifyError) {
+    return (
+      <Tooltip title={`Content hash mismatch: ${entry.verifyError}`}>
+        <LinkOffRoundedIcon fontSize="small" sx={{ color: 'warning.main' }} />
+      </Tooltip>
+    );
+  }
+  return null;
+}
+
+// ProducerCell renders signature status (verified / unverified / unsigned)
+// plus a short fingerprint. Investigators need to see this at a glance
+// when reviewing a long case.
+function ProducerCell({ scan }: { scan: Scan }) {
+  const fp = (scan.signerFingerprint ?? '').slice(0, 8);
+  if (scan.signed && scan.verified) {
+    return (
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <Tooltip title={`Signature verified${scan.signerFingerprint ? ` · ${scan.signerFingerprint}` : ''}`}>
+          <GppGoodRoundedIcon fontSize="small" sx={{ color: 'success.main' }} />
+        </Tooltip>
+        {fp && (
+          <Chip
+            label={fp}
+            size="small"
+            variant="outlined"
+            sx={{ fontFamily: 'monospace', fontSize: 10, height: 20 }}
+          />
+        )}
+      </Stack>
+    );
+  }
+  if (scan.signed && !scan.verified) {
+    return (
+      <Tooltip title="Pack was signed but the signature did not validate. Treat with care.">
+        <Chip
+          icon={<GppMaybeRoundedIcon fontSize="small" />}
+          label="signature failed"
+          size="small"
+          color="error"
+          variant="outlined"
+          sx={{ fontSize: 11 }}
+        />
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip title="No producer signature attached. Tampering before import cannot be detected.">
+      <Chip
+        icon={<HelpOutlineRoundedIcon fontSize="small" />}
+        label="unsigned"
+        size="small"
+        variant="outlined"
+        color="warning"
+        sx={{ fontSize: 11 }}
+      />
+    </Tooltip>
+  );
+}
+
+// ChangeBar shows changedPct as a small numeric value plus a colored
+// bar that saturates at 25%. The colour buckets give a quick
+// "low/medium/high" read across a long scan list.
+function ChangeBar({ pct, pixels }: { pct: number; pixels: number }) {
+  const safe = Number.isFinite(pct) ? Math.max(0, pct) : 0;
+  // 25% is the saturation point — most TSCM "interesting" scans land
+  // well under it, anything past is unambiguous "lots changed".
+  const filled = Math.min(safe / 25, 1);
+  let colour: string;
+  if (safe < 1) colour = 'success.main';
+  else if (safe < 5) colour = 'warning.main';
+  else colour = 'error.main';
+
+  return (
+    <Tooltip title={`${formatInt(pixels)} pixels changed`}>
+      <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+        <Typography variant="body2" fontWeight={500} sx={{ color: colour }}>
+          {formatPct(safe)}
+        </Typography>
+        <Box
+          sx={{
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: 'action.hover',
+            overflow: 'hidden',
+          }}
+        >
+          <Box
+            sx={{
+              height: '100%',
+              width: `${filled * 100}%`,
+              backgroundColor: colour,
+              transition: 'width 200ms ease',
+            }}
+          />
+        </Box>
+      </Stack>
+    </Tooltip>
   );
 }
