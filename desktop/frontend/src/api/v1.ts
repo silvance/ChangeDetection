@@ -98,6 +98,12 @@ export interface LedgerEntry {
   chainBroken?: boolean;
 }
 
+export interface TrustedSigner {
+  fingerprint: string;
+  label?: string;
+  addedAt: string;
+}
+
 const base = '/api/v1';
 
 async function request<T>(
@@ -164,4 +170,20 @@ export const api = {
   // means we don't need to authorise this either.
   scanFileUrl: (caseId: string, scanId: string, name: string) =>
     `${base}/cases/${caseId}/scans/${scanId}/files/${encodeURIComponent(name)}`,
+
+  // Trusted-producer allow-list. The desktop UI uses this to render
+  // "trusted" vs "unknown" badges on signed scans.
+  listTrust: () =>
+    request<{ signers: TrustedSigner[] }>('/trust/fingerprints').then((r) => r.signers),
+
+  addTrust: (fingerprint: string, label?: string) =>
+    request<TrustedSigner>('/trust/fingerprints', {
+      method: 'POST',
+      json: { fingerprint, label: label ?? '' },
+    }),
+
+  removeTrust: (fingerprint: string) =>
+    request<void>(`/trust/fingerprints/${encodeURIComponent(fingerprint)}`, {
+      method: 'DELETE',
+    }),
 };

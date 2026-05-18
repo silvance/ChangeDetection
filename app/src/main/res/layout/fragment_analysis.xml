@@ -223,28 +223,49 @@
 
                     <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginVertical="8dp" app:dividerColor="@color/outline" />
 
-
-
-                    <LinearLayout
+                    <!-- Advanced parameters are collapsed by default: most TSCM users
+                         tune strength / morph / close and leave the rest at defaults. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_advanced_toggle"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="8dp">
-                        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/white" android:text="@string/label_lighting_norm" android:textSize="11sp" />
-                        <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_normalize" android:layout_width="wrap_content" android:layout_height="wrap_content" android:checked="true" />
+                        android:text="@string/btn_show_advanced"
+                        android:textAlignment="viewStart"
+                        android:textColor="@color/tscm_primary"
+                        app:icon="@android:drawable/arrow_down_float"
+                        app:iconGravity="textEnd"
+                        app:iconTint="@color/tscm_primary" />
+
+                    <LinearLayout
+                        android:id="@+id/group_advanced_params"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/white" android:text="@string/label_lighting_norm" android:textSize="11sp" />
+                            <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch_normalize" android:layout_width="wrap_content" android:layout_height="wrap_content" android:checked="true" />
+                        </LinearLayout>
+
+                        <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginVertical="8dp" app:dividerColor="@color/outline" />
+
+                        <TextView android:id="@+id/lbl_pre_blur" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/white" android:textSize="11sp" android:text="@string/label_pre_blur" />
+                        <SeekBar android:id="@+id/seek_pre_blur" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" />
+
+                        <TextView android:id="@+id/lbl_min_region" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/white" android:textSize="11sp" android:text="@string/label_min_region" />
+                        <SeekBar android:id="@+id/seek_min_region" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" />
+
+                        <TextView android:id="@+id/lbl_opacity" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/white" android:textSize="11sp" android:text="@string/label_highlight_opacity" />
+                        <SeekBar android:id="@+id/seek_opacity" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" />
+
                     </LinearLayout>
-
-                    <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginVertical="8dp" app:dividerColor="@color/outline" />
-
-                    <TextView android:id="@+id/lbl_pre_blur" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/white" android:textSize="11sp" android:text="@string/label_pre_blur" />
-                    <SeekBar android:id="@+id/seek_pre_blur" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" />
-
-                    <TextView android:id="@+id/lbl_min_region" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/white" android:textSize="11sp" android:text="@string/label_min_region" />
-                    <SeekBar android:id="@+id/seek_min_region" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" />
-
-                    <TextView android:id="@+id/lbl_opacity" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/white" android:textSize="11sp" android:text="@string/label_highlight_opacity" />
-                    <SeekBar android:id="@+id/seek_opacity" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="12dp" />
 
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

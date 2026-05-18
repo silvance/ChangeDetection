@@ -196,6 +196,22 @@ class AnalysisFragment : Fragment() {
 
     private fun setupControls() {
 
+        // Advanced params (pre-blur, min region, opacity, normalize-luma) are
+        // collapsed by default. Most operators only tune strength/morph/close
+        // and the highlight colour; surfacing the rest costs a lot of vertical
+        // space on small screens.
+        binding.btnAdvancedToggle.setOnClickListener {
+            val showing = binding.groupAdvancedParams.visibility == View.VISIBLE
+            binding.groupAdvancedParams.visibility = if (showing) View.GONE else View.VISIBLE
+            binding.btnAdvancedToggle.setText(
+                if (showing) R.string.btn_show_advanced else R.string.btn_hide_advanced
+            )
+            binding.btnAdvancedToggle.setIconResource(
+                if (showing) android.R.drawable.arrow_down_float
+                else android.R.drawable.arrow_up_float
+            )
+        }
+
         binding.seekStrength.max = 95
         binding.seekStrength.progress = viewModel.strength - 5
         binding.lblStrength.text = getString(R.string.label_strength) + ": ${viewModel.strength}"

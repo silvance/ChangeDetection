@@ -86,6 +86,8 @@
     <string name="label_resized">IMAGE RESIZED FOR PROCESSING</string>
     <string name="btn_run_detection">RUN DETECTION</string>
     <string name="label_parameters">PARAMETERS</string>
+    <string name="btn_show_advanced">SHOW ADVANCED PARAMETERS</string>
+    <string name="btn_hide_advanced">HIDE ADVANCED PARAMETERS</string>
     <string name="label_strength">STRENGTH</string>
     <string name="label_noise_reduction">NOISE REDUCTION</string>
     <string name="label_fill_gaps">FILL GAPS</string>
