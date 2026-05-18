@@ -77,6 +77,24 @@ func TestRead_ClampsHostileManifestValues(t *testing.T) {
 	}
 }
 
+// The phone-side scanId is what lets the desktop reject re-uploads.
+// Verifying it actually survives the Read round-trip is one small but
+// critical contract test.
+func TestRead_PreservesScanID(t *testing.T) {
+	m := Manifest{
+		Label:      "x",
+		CapturedAt: "2026-01-01T00:00:00Z",
+		ScanID:     "550e8400-e29b-41d4-a716-446655440000",
+	}
+	pack, err := Read(makeUnsignedPack(t, m))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if pack.Manifest.ScanID != m.ScanID {
+		t.Errorf("scanId not preserved: got %q want %q", pack.Manifest.ScanID, m.ScanID)
+	}
+}
+
 // NaN can't reach us through JSON (Go refuses to marshal it), but the
 // defensive path in clampFloat still has to be correct in case anything
 // ever constructs a Manifest in-memory and runs it through clampManifest.

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [AnalysisEntity::class], version = 4, exportSchema = false)
+@Database(entities = [AnalysisEntity::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun analysisDao(): AnalysisDao
 
@@ -36,6 +36,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // ── Migration v4 → v5 ────────────────────────────────────────────────
+        // Adds the cross-device scan UUID. We can't put randomness in the
+        // ALTER TABLE default (SQLite uses a single literal for all existing
+        // rows), so we add the column with an empty default and then UPDATE
+        // every row with a per-row random 32-hex-char value. New rows get a
+        // proper Java UUID from the entity default thereafter.
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE analysis_history ADD COLUMN uuid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE analysis_history SET uuid = lower(hex(randomblob(16))) WHERE uuid = ''")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -43,7 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tscm_database"
                 )
-                    .addMigrations(MIGRATION_3_4)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 INSTANCE = instance
                 instance

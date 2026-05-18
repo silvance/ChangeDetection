@@ -1,6 +1,7 @@
 package library
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,5 +115,8 @@ func TestAddScanRejectsDuplicateID(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected duplicate-id AddScan to fail, got nil")
+	}
+	if !errors.Is(err, ErrScanExists) {
+		t.Errorf("expected ErrScanExists, got %v", err)
 	}
 }

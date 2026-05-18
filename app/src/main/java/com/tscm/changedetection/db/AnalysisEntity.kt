@@ -2,10 +2,18 @@ package com.tscm.changedetection.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.util.UUID
 
 @Entity(tableName = "analysis_history")
 data class AnalysisEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
+
+    // Stable cross-device identifier. The phone generates this at save
+    // time and includes it in every Evidence Pack manifest so the desktop
+    // can de-duplicate re-uploads of the same scan instead of multiplying
+    // history rows. Distinct from `id`, which is a phone-local autoinc.
+    val uuid: String = UUID.randomUUID().toString(),
+
     val timestamp: Long = System.currentTimeMillis(),
     val label: String,
     val beforeFileName: String,

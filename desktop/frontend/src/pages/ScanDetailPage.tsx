@@ -27,6 +27,7 @@ import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { api, type Scan, type TrustedSigner } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ImageComparisonTab } from '../components/ImageComparisonTab';
+import { ConfirmDialog, TrustLabelDialog } from '../components/TrustDialogs';
 import { formatAbsolute, formatInt, formatPct } from '../utils/format';
 
 interface Props {
@@ -340,6 +341,9 @@ function SignatureCard({ scan }: { scan: Scan }) {
   };
 
   const [trusted, setTrusted] = useState<TrustedSigner[]>([]);
+  const [trustDialogOpen, setTrustDialogOpen] = useState(false);
+  const [untrustDialogOpen, setUntrustDialogOpen] = useState(false);
+  const [trustError, setTrustError] = useState<string | null>(null);
   const fp = (scan.signerFingerprint ?? '').toLowerCase();
   const isTrusted = !!fp && trusted.some((t) => t.fingerprint.toLowerCase() === fp);
 
@@ -359,26 +363,27 @@ function SignatureCard({ scan }: { scan: Scan }) {
     };
   }, []);
 
-  const handleTrust = async () => {
+  const handleConfirmTrust = async (label: string) => {
+    setTrustDialogOpen(false);
     if (!fp) return;
-    const label = window.prompt('Label for this producer? (optional)', '');
-    if (label === null) return;
     try {
       const entry = await api.addTrust(fp, label || undefined);
       setTrusted((cur) => [...cur.filter((t) => t.fingerprint.toLowerCase() !== fp), entry]);
+      setTrustError(null);
     } catch (e) {
-      alert(`Failed to trust producer: ${(e as Error).message}`);
+      setTrustError((e as Error).message);
     }
   };
 
-  const handleUntrust = async () => {
+  const handleConfirmUntrust = async () => {
+    setUntrustDialogOpen(false);
     if (!fp) return;
-    if (!confirm(`Remove ${fp} from the trust list?`)) return;
     try {
       await api.removeTrust(fp);
       setTrusted((cur) => cur.filter((t) => t.fingerprint.toLowerCase() !== fp));
+      setTrustError(null);
     } catch (e) {
-      alert(`Failed to untrust producer: ${(e as Error).message}`);
+      setTrustError((e as Error).message);
     }
   };
 
@@ -455,18 +460,52 @@ function SignatureCard({ scan }: { scan: Scan }) {
           {scan.signed && scan.verified && (
             <Box sx={{ mt: 1 }}>
               {isTrusted ? (
-                <Button size="small" color="warning" onClick={handleUntrust}>
+                <Button size="small" color="warning" onClick={() => setUntrustDialogOpen(true)}>
                   Remove from trust list
                 </Button>
               ) : (
-                <Button size="small" variant="outlined" onClick={handleTrust}>
+                <Button size="small" variant="outlined" onClick={() => setTrustDialogOpen(true)}>
                   Mark trusted
                 </Button>
+              )}
+              {trustError && (
+                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                  {trustError}
+                </Typography>
               )}
             </Box>
           )}
         </Box>
       )}
+
+      <TrustLabelDialog
+        open={trustDialogOpen}
+        fingerprint={scan.signerFingerprint ?? ''}
+        onCancel={() => setTrustDialogOpen(false)}
+        onSubmit={(label) => void handleConfirmTrust(label)}
+      />
+      <ConfirmDialog
+        open={untrustDialogOpen}
+        title="Remove from trust list?"
+        destructive
+        confirmLabel="Remove"
+        message={
+          <Stack spacing={1}>
+            <Typography variant="body2">
+              Future signed scans from this producer will be flagged as
+              "unknown" again in the case view.
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{ fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}
+            >
+              {scan.signerFingerprint}
+            </Typography>
+          </Stack>
+        }
+        onCancel={() => setUntrustDialogOpen(false)}
+        onConfirm={() => void handleConfirmUntrust()}
+      />
     </Paper>
   );
 }

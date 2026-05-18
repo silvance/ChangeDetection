@@ -453,7 +453,12 @@ class TscmViewModel : ViewModel() {
                     beforeJpg = before,
                     afterJpg = after,
                     resultPng = resultPng,
-                    warp = currentWarp()
+                    warp = currentWarp(),
+                    // Direct exports (share-sheet to phone disk) get a fresh
+                    // UUID per export. Re-exporting the same in-memory scan
+                    // produces a new ID — that's deliberate, since exports
+                    // without going through History have no stable identity.
+                    scanId = java.util.UUID.randomUUID().toString()
                 )
                 zipFile.writeBytes(packBytes)
 
@@ -537,7 +542,11 @@ class TscmViewModel : ViewModel() {
                 entity.warpDstJson?.let { dst ->
                     com.tscm.changedetection.pairing.EvidencePack.Warp(src, dst)
                 }
-            }
+            },
+            // Pass the entity's stable UUID so re-sending the same saved
+            // scan doesn't multiply on the desktop. AddScan rejects
+            // duplicates explicitly now (see desktop/internal/library).
+            scanId = entity.uuid
         )
     }
 

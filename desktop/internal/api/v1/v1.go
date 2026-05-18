@@ -415,6 +415,10 @@ func (h *handlers) importPack(c *gin.Context) {
 		ResultPNG: pack.ResultPNG,
 	})
 	if err != nil {
+		if errors.Is(err, library.ErrScanExists) {
+			fail(c, http.StatusConflict, err)
+			return
+		}
 		fail(c, http.StatusInternalServerError, err)
 		return
 	}

@@ -71,7 +71,15 @@ object EvidencePack {
         afterJpg: ByteArray,
         resultPng: ByteArray? = null,
         warp: Warp? = null,
-        signed: Boolean = true
+        signed: Boolean = true,
+        // Optional stable scan ID assigned by the producer. The desktop
+        // uses it to de-duplicate re-uploads of the same scan — without
+        // this it generates a fresh UUID per import and the same pack
+        // sent twice creates two history rows. Not covered by the
+        // signature (the producer can re-emit the same scan with the
+        // same ID without re-signing); chain-of-custody integrity
+        // comes from the digests, not the ID.
+        scanId: String = ""
     ): ByteArray {
         val isoTimestamp = isoFormatter.format(Date(capturedAtMs))
         val source = "phone:android"
@@ -105,6 +113,7 @@ object EvidencePack {
             label = label,
             capturedAtIso = isoTimestamp,
             source = source,
+            scanId = scanId,
             stats = stats,
             params = params,
             warp = warp,
@@ -191,6 +200,7 @@ object EvidencePack {
         label: String,
         capturedAtIso: String,
         source: String,
+        scanId: String,
         stats: Stats?,
         params: Params,
         warp: Warp?,
@@ -223,9 +233,11 @@ object EvidencePack {
             ""","signature":"${escape(signatureB64)}""""
         } else ""
 
+        val scanIdEntry = if (scanId.isNotEmpty()) """"scanId": "${escape(scanId)}",""" + "\n  " else ""
+
         return """{
   "version": 1,
-  "label": "${escape(label)}",
+  $scanIdEntry"label": "${escape(label)}",
   "capturedAt": "$capturedAtIso",
   "source": "${escape(source)}",
   "stats": $statsObj,

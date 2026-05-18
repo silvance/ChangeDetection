@@ -122,6 +122,11 @@ type config struct {
 
 // ── Library type ───────────────────────────────────────────────────────────
 
+// ErrScanExists is returned by AddScan when the producer-supplied scanId
+// is already present in the case. The HTTP layer maps this to 409 so the
+// phone can distinguish "you re-uploaded" from "something went wrong".
+var ErrScanExists = errors.New("scan already exists")
+
 // Library is a process-wide handle to the on-disk store. Open() returns one;
 // callers should keep the same Library for the life of the server.
 type Library struct {
@@ -401,7 +406,7 @@ func (l *Library) AddScan(caseID string, s Scan, files ScanInputFiles) (*Scan, e
 	}
 	finalDir := l.scanDir(caseID, s.ID)
 	if _, err := os.Stat(finalDir); err == nil {
-		return nil, fmt.Errorf("scan %s already exists in case %s", s.ID, caseID)
+		return nil, fmt.Errorf("%w: scan %s already exists in case %s", ErrScanExists, s.ID, caseID)
 	}
 
 	// MkdirTemp creates a uniquely-named sibling so two concurrent imports

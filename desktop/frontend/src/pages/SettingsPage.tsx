@@ -15,6 +15,7 @@ import GppGoodRoundedIcon from '@mui/icons-material/GppGoodRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { api, type ServerInfo, type TrustedSigner } from '../api/v1';
+import { ConfirmDialog } from '../components/TrustDialogs';
 import { PageHeader } from '../components/shell/PageHeader';
 import { formatAbsolute } from '../utils/format';
 
@@ -205,6 +206,7 @@ function TrustedProducersCard() {
   const [fp, setFp] = useState('');
   const [label, setLabel] = useState('');
   const [adding, setAdding] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<TrustedSigner | null>(null);
 
   const refresh = async () => {
     try {
@@ -234,10 +236,12 @@ function TrustedProducersCard() {
     }
   };
 
-  const handleRemove = async (fingerprint: string) => {
-    if (!confirm(`Remove ${fingerprint} from the trusted producers list?`)) return;
+  const handleRemove = async () => {
+    if (!confirmRemove) return;
+    const target = confirmRemove;
+    setConfirmRemove(null);
     try {
-      await api.removeTrust(fingerprint);
+      await api.removeTrust(target.fingerprint);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -324,7 +328,7 @@ function TrustedProducersCard() {
                 </Typography>
               </Box>
               <Tooltip title="Remove from trust list">
-                <IconButton size="small" onClick={() => void handleRemove(s.fingerprint)}>
+                <IconButton size="small" onClick={() => setConfirmRemove(s)}>
                   <DeleteOutlineRoundedIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -332,6 +336,33 @@ function TrustedProducersCard() {
           ))}
         </Stack>
       )}
+
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        title="Remove trusted producer?"
+        destructive
+        confirmLabel="Remove"
+        message={
+          confirmRemove && (
+            <>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Future signed scans from this producer will be flagged as
+                "unknown" in the case view. You can re-add the fingerprint
+                later.
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{ fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}
+              >
+                {confirmRemove.fingerprint}
+                {confirmRemove.label ? ` · ${confirmRemove.label}` : ''}
+              </Typography>
+            </>
+          )
+        }
+        onCancel={() => setConfirmRemove(null)}
+        onConfirm={() => void handleRemove()}
+      />
     </Paper>
   );
 }

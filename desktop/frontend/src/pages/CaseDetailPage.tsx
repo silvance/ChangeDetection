@@ -37,6 +37,7 @@ import {
   type TrustedSigner,
 } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
+import { TrustLabelDialog } from '../components/TrustDialogs';
 import { formatAbsolute, formatInt, formatPct, formatRelative } from '../utils/format';
 
 interface Props {
@@ -452,6 +453,8 @@ function ProducerCell({
   const fpRaw = (scan.signerFingerprint ?? '').toLowerCase();
   const fpShort = fpRaw.slice(0, 8);
   const trusted = !!fpRaw && trustedSet.has(fpRaw);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [trustError, setTrustError] = useState<string | null>(null);
 
   if (scan.signed && scan.verified) {
     if (trusted) {
@@ -473,43 +476,58 @@ function ProducerCell({
     // Verified but unknown producer — surface a one-click "Trust"
     // affordance so the operator can promote known fingerprints
     // straight from a row instead of round-tripping via Settings.
-    const handleTrust = async (e: React.MouseEvent) => {
-      e.stopPropagation();
+    const handleConfirm = async (label: string) => {
+      setDialogOpen(false);
       if (!fpRaw) return;
-      const label = window.prompt(
-        `Label for producer ${fpShort}? (optional)`,
-        '',
-      );
-      if (label === null) return;
       try {
         await api.addTrust(fpRaw, label || undefined);
         onTrustChanged();
+        setTrustError(null);
       } catch (err) {
-        alert(`Failed to trust producer: ${(err as Error).message}`);
+        setTrustError((err as Error).message);
       }
     };
     return (
-      <Stack direction="row" spacing={0.5} alignItems="center">
-        <Tooltip title="Signature is valid, but this fingerprint is not in your trust list.">
-          <Chip
-            icon={<HelpOutlineRoundedIcon fontSize="small" />}
-            label={fpShort || 'unknown producer'}
-            size="small"
-            color="warning"
-            variant="outlined"
-            sx={{ fontFamily: fpShort ? 'monospace' : undefined, fontSize: 11 }}
-          />
-        </Tooltip>
-        <Tooltip title="Add this fingerprint to the trusted producers list.">
-          <Button
-            size="small"
-            onClick={handleTrust}
-            sx={{ minWidth: 0, px: 0.75, py: 0.25, fontSize: 10 }}
+      <>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Tooltip
+            title={
+              trustError
+                ? `Trust failed: ${trustError}`
+                : 'Signature is valid, but this fingerprint is not in your trust list.'
+            }
           >
-            Trust
-          </Button>
-        </Tooltip>
-      </Stack>
+            <Chip
+              icon={<HelpOutlineRoundedIcon fontSize="small" />}
+              label={fpShort || 'unknown producer'}
+              size="small"
+              color={trustError ? 'error' : 'warning'}
+              variant="outlined"
+              sx={{ fontFamily: fpShort ? 'monospace' : undefined, fontSize: 11 }}
+            />
+          </Tooltip>
+          <Tooltip title="Add this fingerprint to the trusted producers list.">
+            <Button
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDialogOpen(true);
+              }}
+              sx={{ minWidth: 0, px: 0.75, py: 0.25, fontSize: 10 }}
+            >
+              Trust
+            </Button>
+          </Tooltip>
+        </Stack>
+        <Box onClick={(e) => e.stopPropagation()}>
+          <TrustLabelDialog
+            open={dialogOpen}
+            fingerprint={scan.signerFingerprint ?? fpRaw}
+            onCancel={() => setDialogOpen(false)}
+            onSubmit={(label) => void handleConfirm(label)}
+          />
+        </Box>
+      </>
     );
   }
   if (scan.signed && !scan.verified) {
