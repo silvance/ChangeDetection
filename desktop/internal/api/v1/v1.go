@@ -80,7 +80,7 @@ type handlers struct {
 //     X-PixelSentinel-Token or Authorization: Bearer <token>.
 func requirePairingToken(lib *library.Library) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if isLoopback(c.ClientIP()) {
+		if isLoopback(remoteHost(c.Request.RemoteAddr)) {
 			c.Next()
 			return
 		}
@@ -111,6 +111,18 @@ func isLoopback(ip string) bool {
 	return parsed.IsLoopback()
 }
 
+// remoteHost extracts the IP from an http.Request.RemoteAddr ("host:port").
+// We use this instead of Gin's c.ClientIP() for the loopback check, because
+// ClientIP honours X-Forwarded-For / X-Real-IP — an attacker on the LAN
+// could otherwise send "X-Forwarded-For: 127.0.0.1" and skip auth.
+func remoteHost(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
+	}
+	return host
+}
+
 // constantTimeEq is a length-then-byte comparison that is constant time wrt
 // the secret on the right. We reimplement it locally rather than pulling in
 // crypto/subtle just to avoid the cargo-cult import in handlers.
@@ -135,7 +147,7 @@ func constantTimeEq(got, want string) bool {
 
 func (h *handlers) getInfo(c *gin.Context) {
 	resp := h.info
-	if isLoopback(c.ClientIP()) {
+	if isLoopback(remoteHost(c.Request.RemoteAddr)) {
 		resp.Loopback = true
 		resp.Token = h.lib.PairingToken()
 		// DataDir is set during construction by the caller via Register.

@@ -264,6 +264,8 @@ object EvidencePack {
 
     private val HEX = "0123456789abcdef".toCharArray()
 
-    /** MUST match the Go side's `signingDomain` constant byte-for-byte. */
-    private const val SIGNING_DOMAIN = "PIXELSENTINEL-PACK-SIG-v1 "
+    /** MUST match the Go side's `signingDomain` constant byte-for-byte.
+     *  The trailing byte is NUL (0x00) - spelled with the Unicode escape so a
+     *  passing editor does not silently "fix" it to a space. */
+    private const val SIGNING_DOMAIN = "PIXELSENTINEL-PACK-SIG-v1\u0000"
 }
