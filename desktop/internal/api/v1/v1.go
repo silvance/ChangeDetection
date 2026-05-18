@@ -57,6 +57,13 @@ func Register(g *gin.RouterGroup, lib *library.Library, info ServerInfo) {
 	auth.DELETE("/cases/:caseId/scans/:scanId", h.deleteScan)
 
 	auth.POST("/import/pack", h.importPack)
+
+	// Trusted-producer allow-list. Lets the operator label which phone
+	// fingerprints they recognise so the UI can flag signed-by-unknown
+	// scans without rejecting them outright.
+	auth.GET("/trust/fingerprints", h.listTrust)
+	auth.POST("/trust/fingerprints", h.addTrust)
+	auth.DELETE("/trust/fingerprints/:fingerprint", h.removeTrust)
 }
 
 type handlers struct {
@@ -415,6 +422,43 @@ func (h *handlers) importPack(c *gin.Context) {
 		"caseId": caseID,
 		"scan":   scan,
 	})
+}
+
+// ── Trust list ─────────────────────────────────────────────────────────────
+
+func (h *handlers) listTrust(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"signers": h.lib.Trust().List()})
+}
+
+type addTrustRequest struct {
+	Fingerprint string `json:"fingerprint"`
+	Label       string `json:"label"`
+}
+
+func (h *handlers) addTrust(c *gin.Context) {
+	var req addTrustRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, fmt.Errorf("invalid body: %w", err))
+		return
+	}
+	entry, err := h.lib.Trust().Add(req.Fingerprint, req.Label)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusCreated, entry)
+}
+
+func (h *handlers) removeTrust(c *gin.Context) {
+	if err := h.lib.Trust().Remove(c.Param("fingerprint")); err != nil {
+		if errors.Is(err, library.ErrTrustNotFound) {
+			fail(c, http.StatusNotFound, err)
+			return
+		}
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

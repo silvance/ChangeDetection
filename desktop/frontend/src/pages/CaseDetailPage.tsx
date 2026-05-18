@@ -28,7 +28,14 @@ import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
-import { api, type Case, type LedgerEntry, type Scan, type ServerInfo } from '../api/v1';
+import {
+  api,
+  type Case,
+  type LedgerEntry,
+  type Scan,
+  type ServerInfo,
+  type TrustedSigner,
+} from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
 import { formatAbsolute, formatInt, formatPct, formatRelative } from '../utils/format';
 
@@ -53,8 +60,28 @@ export function CaseDetailPage({
   const [scans, setScans] = useState<Scan[] | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [info, setInfo] = useState<ServerInfo | null>(null);
+  const [trusted, setTrusted] = useState<TrustedSigner[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [chainOpen, setChainOpen] = useState(false);
+
+  // Set of normalised trusted fingerprints, indexed for O(1) lookup by
+  // each row.
+  const trustedSet = useMemo(
+    () => new Set(trusted.map((s) => s.fingerprint.toLowerCase())),
+    [trusted],
+  );
+
+  // After the operator marks a fingerprint trusted from a scan row, we
+  // need to refresh the trust list without reloading every scan. This
+  // callback gets handed down to ProducerCell.
+  const reloadTrust = async () => {
+    try {
+      setTrusted(await api.listTrust());
+    } catch {
+      // Non-fatal; the badge will just stay "unknown" until the next
+      // explicit refresh.
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -65,16 +92,18 @@ export function CaseDetailPage({
       // overlay for that refresh. info() is fetched too so the empty
       // state can show the host/token a new operator needs to type
       // into their phone.
-      const [c, s, l, i] = await Promise.all([
+      const [c, s, l, i, t] = await Promise.all([
         api.getCase(caseId),
         api.listScans(caseId),
         api.getLedger(caseId).catch(() => [] as LedgerEntry[]),
         api.info().catch(() => null),
+        api.listTrust().catch(() => [] as TrustedSigner[]),
       ]);
       setTheCase(c);
       setScans(s);
       setLedger(l);
       setInfo(i);
+      setTrusted(t);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -219,9 +248,11 @@ export function CaseDetailPage({
                 target={g.target}
                 scans={g.scans}
                 ledgerByScan={ledgerByScan}
+                trustedSet={trustedSet}
                 onOpenScan={onOpenScan}
                 onOpenTimeSeries={onOpenTimeSeries}
                 onDeleteScan={handleDeleteScan}
+                onTrustChanged={() => void reloadTrust()}
               />
             ))}
           </Stack>
@@ -235,16 +266,20 @@ function ScanGroup({
   target,
   scans,
   ledgerByScan,
+  trustedSet,
   onOpenScan,
   onOpenTimeSeries,
   onDeleteScan,
+  onTrustChanged,
 }: {
   target: string;
   scans: Scan[];
   ledgerByScan: Map<string, LedgerEntry>;
+  trustedSet: Set<string>;
   onOpenScan: (scanId: string) => void;
   onOpenTimeSeries: (target: string) => void;
   onDeleteScan: (scanId: string, label: string) => void;
+  onTrustChanged: () => void;
 }) {
   const displayName = target || UNTAGGED_LABEL;
   // Sort within a group oldest-first so the time-series narrative reads
@@ -341,7 +376,11 @@ function ScanGroup({
                   </TableCell>
                   <TableCell align="right">{formatInt(s.stats.regions)}</TableCell>
                   <TableCell>
-                    <ProducerCell scan={s} />
+                    <ProducerCell
+                      scan={s}
+                      trustedSet={trustedSet}
+                      onTrustChanged={onTrustChanged}
+                    />
                   </TableCell>
                   <TableCell>
                     <Chip
@@ -394,25 +433,82 @@ function ChainStatusCell({ entry }: { entry: LedgerEntry | undefined }) {
   return null;
 }
 
-// ProducerCell renders signature status (verified / unverified / unsigned)
-// plus a short fingerprint. Investigators need to see this at a glance
-// when reviewing a long case.
-function ProducerCell({ scan }: { scan: Scan }) {
-  const fp = (scan.signerFingerprint ?? '').slice(0, 8);
+// ProducerCell renders signature + producer trust status:
+//   - verified + trusted    → green check + fingerprint chip
+//   - verified + unknown    → yellow "unknown producer" chip + "Trust" button
+//   - signed, sig failed    → red "signature failed" chip
+//   - unsigned              → yellow "unsigned" chip
+// The trust click handler talks to /api/v1/trust/fingerprints directly
+// and asks the parent to refresh the trust set without re-fetching scans.
+function ProducerCell({
+  scan,
+  trustedSet,
+  onTrustChanged,
+}: {
+  scan: Scan;
+  trustedSet: Set<string>;
+  onTrustChanged: () => void;
+}) {
+  const fpRaw = (scan.signerFingerprint ?? '').toLowerCase();
+  const fpShort = fpRaw.slice(0, 8);
+  const trusted = !!fpRaw && trustedSet.has(fpRaw);
+
   if (scan.signed && scan.verified) {
-    return (
-      <Stack direction="row" spacing={0.5} alignItems="center">
-        <Tooltip title={`Signature verified${scan.signerFingerprint ? ` · ${scan.signerFingerprint}` : ''}`}>
-          <GppGoodRoundedIcon fontSize="small" sx={{ color: 'success.main' }} />
-        </Tooltip>
-        {fp && (
+    if (trusted) {
+      return (
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Tooltip title={`Trusted producer · ${scan.signerFingerprint}`}>
+            <GppGoodRoundedIcon fontSize="small" sx={{ color: 'success.main' }} />
+          </Tooltip>
           <Chip
-            label={fp}
+            label={fpShort}
             size="small"
             variant="outlined"
+            color="success"
             sx={{ fontFamily: 'monospace', fontSize: 10, height: 20 }}
           />
-        )}
+        </Stack>
+      );
+    }
+    // Verified but unknown producer — surface a one-click "Trust"
+    // affordance so the operator can promote known fingerprints
+    // straight from a row instead of round-tripping via Settings.
+    const handleTrust = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!fpRaw) return;
+      const label = window.prompt(
+        `Label for producer ${fpShort}? (optional)`,
+        '',
+      );
+      if (label === null) return;
+      try {
+        await api.addTrust(fpRaw, label || undefined);
+        onTrustChanged();
+      } catch (err) {
+        alert(`Failed to trust producer: ${(err as Error).message}`);
+      }
+    };
+    return (
+      <Stack direction="row" spacing={0.5} alignItems="center">
+        <Tooltip title="Signature is valid, but this fingerprint is not in your trust list.">
+          <Chip
+            icon={<HelpOutlineRoundedIcon fontSize="small" />}
+            label={fpShort || 'unknown producer'}
+            size="small"
+            color="warning"
+            variant="outlined"
+            sx={{ fontFamily: fpShort ? 'monospace' : undefined, fontSize: 11 }}
+          />
+        </Tooltip>
+        <Tooltip title="Add this fingerprint to the trusted producers list.">
+          <Button
+            size="small"
+            onClick={handleTrust}
+            sx={{ minWidth: 0, px: 0.75, py: 0.25, fontSize: 10 }}
+          >
+            Trust
+          </Button>
+        </Tooltip>
       </Stack>
     );
   }

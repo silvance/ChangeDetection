@@ -125,10 +125,16 @@ type config struct {
 // Library is a process-wide handle to the on-disk store. Open() returns one;
 // callers should keep the same Library for the life of the server.
 type Library struct {
-	dir string
-	mu  sync.RWMutex
-	cfg config
+	dir   string
+	mu    sync.RWMutex
+	cfg   config
+	trust *TrustStore
 }
+
+// Trust exposes the trusted-signer allow-list. Callers (typically the
+// HTTP layer) use it to add / remove fingerprints and to ask "is this
+// pack signed by a known phone?" when rendering scans.
+func (l *Library) Trust() *TrustStore { return l.trust }
 
 // Open initialises (or loads) a library rooted at dir.
 func Open(dir string) (*Library, error) {
@@ -139,6 +145,11 @@ func Open(dir string) (*Library, error) {
 	if err := l.loadOrInitConfig(); err != nil {
 		return nil, err
 	}
+	ts, err := openTrustStore(l.trustPath())
+	if err != nil {
+		return nil, err
+	}
+	l.trust = ts
 	// Sweep any ".staging-*" directories left behind by a crashed previous
 	// run. They're invisible to readers but eat disk; clean them up at
 	// startup so they don't accumulate.

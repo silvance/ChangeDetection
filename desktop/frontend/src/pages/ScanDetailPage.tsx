@@ -24,7 +24,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import GppGoodRoundedIcon from '@mui/icons-material/GppGoodRounded';
 import GppMaybeRoundedIcon from '@mui/icons-material/GppMaybeRounded';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
-import { api, type Scan } from '../api/v1';
+import { api, type Scan, type TrustedSigner } from '../api/v1';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ImageComparisonTab } from '../components/ImageComparisonTab';
 import { formatAbsolute, formatInt, formatPct } from '../utils/format';
@@ -338,14 +338,67 @@ function SignatureCard({ scan }: { scan: Scan }) {
     color: 'success' | 'warning' | 'default' | 'error';
     sub: string;
   };
+
+  const [trusted, setTrusted] = useState<TrustedSigner[]>([]);
+  const fp = (scan.signerFingerprint ?? '').toLowerCase();
+  const isTrusted = !!fp && trusted.some((t) => t.fingerprint.toLowerCase() === fp);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listTrust()
+      .then((s) => {
+        if (!cancelled) setTrusted(s);
+      })
+      .catch(() => {
+        // Loopback bypass usually keeps this from failing; if it does,
+        // silently fall back to "no trusted producers known".
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleTrust = async () => {
+    if (!fp) return;
+    const label = window.prompt('Label for this producer? (optional)', '');
+    if (label === null) return;
+    try {
+      const entry = await api.addTrust(fp, label || undefined);
+      setTrusted((cur) => [...cur.filter((t) => t.fingerprint.toLowerCase() !== fp), entry]);
+    } catch (e) {
+      alert(`Failed to trust producer: ${(e as Error).message}`);
+    }
+  };
+
+  const handleUntrust = async () => {
+    if (!fp) return;
+    if (!confirm(`Remove ${fp} from the trust list?`)) return;
+    try {
+      await api.removeTrust(fp);
+      setTrusted((cur) => cur.filter((t) => t.fingerprint.toLowerCase() !== fp));
+    } catch (e) {
+      alert(`Failed to untrust producer: ${(e as Error).message}`);
+    }
+  };
+
   let status: Status;
   if (scan.signed && scan.verified) {
-    status = {
-      icon: <GppGoodRoundedIcon fontSize="small" />,
-      label: 'Signed and verified',
-      color: 'success',
-      sub: 'Bytes match the producer\'s signature.',
-    };
+    if (isTrusted) {
+      status = {
+        icon: <GppGoodRoundedIcon fontSize="small" />,
+        label: 'Trusted producer',
+        color: 'success',
+        sub: "Signature is valid and this fingerprint is on your trust list.",
+      };
+    } else {
+      status = {
+        icon: <HelpOutlineRoundedIcon fontSize="small" />,
+        label: 'Unknown producer',
+        color: 'warning',
+        sub: 'Signature is valid, but this fingerprint is not on your trust list. Mark it trusted if you recognise the phone.',
+      };
+    }
   } else if (scan.signed && !scan.verified) {
     status = {
       icon: <GppMaybeRoundedIcon fontSize="small" />,
@@ -373,7 +426,7 @@ function SignatureCard({ scan }: { scan: Scan }) {
           label={status.label}
           color={status.color === 'default' ? undefined : status.color}
           size="small"
-          variant={scan.signed && scan.verified ? 'filled' : 'outlined'}
+          variant={isTrusted && scan.verified ? 'filled' : 'outlined'}
         />
       </Stack>
       <Typography
@@ -399,6 +452,19 @@ function SignatureCard({ scan }: { scan: Scan }) {
           >
             {scan.signerFingerprint}
           </Typography>
+          {scan.signed && scan.verified && (
+            <Box sx={{ mt: 1 }}>
+              {isTrusted ? (
+                <Button size="small" color="warning" onClick={handleUntrust}>
+                  Remove from trust list
+                </Button>
+              ) : (
+                <Button size="small" variant="outlined" onClick={handleTrust}>
+                  Mark trusted
+                </Button>
+              )}
+            </Box>
+          )}
         </Box>
       )}
     </Paper>
