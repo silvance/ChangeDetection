@@ -139,7 +139,41 @@ func Open(dir string) (*Library, error) {
 	if err := l.loadOrInitConfig(); err != nil {
 		return nil, err
 	}
+	// Sweep any ".staging-*" directories left behind by a crashed previous
+	// run. They're invisible to readers but eat disk; clean them up at
+	// startup so they don't accumulate.
+	l.sweepStaging()
 	return l, nil
+}
+
+// sweepStaging walks every case's scans dir and removes ".staging-*"
+// directories. Best-effort: errors are reported to stderr but do not
+// block startup. Safe to call concurrently with nothing because
+// AddScan holds the write lock while it owns a staging dir.
+func (l *Library) sweepStaging() {
+	entries, err := os.ReadDir(l.casesDir())
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		scansDir := l.caseScansDir(e.Name())
+		scans, err := os.ReadDir(scansDir)
+		if err != nil {
+			continue
+		}
+		for _, s := range scans {
+			if !s.IsDir() || !isStagingDir(s.Name()) {
+				continue
+			}
+			path := filepath.Join(scansDir, s.Name())
+			if err := os.RemoveAll(path); err != nil {
+				fmt.Fprintf(os.Stderr, "pixelsentinel: sweep %s: %v\n", path, err)
+			}
+		}
+	}
 }
 
 func (l *Library) loadOrInitConfig() error {
@@ -304,6 +338,13 @@ type ScanInputFiles struct {
 // content hash and chains it to the previous scan in the case so the
 // resulting library is tamper-evident: changing any saved bytes or
 // reordering scans within a case will break the chain.
+//
+// Imports are atomic: all four files (before, after, result, manifest)
+// are written into a hidden staging directory next to the scans dir,
+// and only renamed into place once every byte is on disk. A crash mid-
+// import therefore leaves a "staging-*" directory (which listScans
+// already ignores because it has no manifest.json) and never a half-
+// written scan that the UI would treat as real.
 func (l *Library) AddScan(caseID string, s Scan, files ScanInputFiles) (*Scan, error) {
 	if caseID == "" {
 		return nil, errors.New("empty case id")
@@ -343,32 +384,61 @@ func (l *Library) AddScan(caseID string, s Scan, files ScanInputFiles) (*Scan, e
 		s.PrevHash = prev[len(prev)-1].ContentHash
 	}
 
-	scanDir := l.scanDir(caseID, s.ID)
-	if err := os.MkdirAll(scanDir, 0o755); err != nil {
+	scansDir := l.caseScansDir(caseID)
+	if err := os.MkdirAll(scansDir, 0o755); err != nil {
 		return nil, err
 	}
+	finalDir := l.scanDir(caseID, s.ID)
+	if _, err := os.Stat(finalDir); err == nil {
+		return nil, fmt.Errorf("scan %s already exists in case %s", s.ID, caseID)
+	}
 
-	if err := os.WriteFile(filepath.Join(scanDir, "before.jpg"), files.BeforeJPG, 0o644); err != nil {
+	// MkdirTemp creates a uniquely-named sibling so two concurrent imports
+	// (or a retry after a crash) can never collide. The leading "." plus
+	// missing manifest.json makes listScans skip it.
+	stagingDir, err := os.MkdirTemp(scansDir, ".staging-*")
+	if err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			os.RemoveAll(stagingDir)
+		}
+	}()
+
+	if err := os.WriteFile(filepath.Join(stagingDir, "before.jpg"), files.BeforeJPG, 0o644); err != nil {
 		return nil, err
 	}
 	s.Files.Before = "before.jpg"
 
-	if err := os.WriteFile(filepath.Join(scanDir, "after.jpg"), files.AfterJPG, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(stagingDir, "after.jpg"), files.AfterJPG, 0o644); err != nil {
 		return nil, err
 	}
 	s.Files.After = "after.jpg"
 
 	if len(files.ResultPNG) > 0 {
-		if err := os.WriteFile(filepath.Join(scanDir, "result.png"), files.ResultPNG, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(stagingDir, "result.png"), files.ResultPNG, 0o644); err != nil {
 			return nil, err
 		}
 		name := "result.png"
 		s.Files.Result = &name
 	}
 
-	if err := writeJSONAtomic(l.scanManifestPath(caseID, s.ID), s); err != nil {
+	manifestBytes, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
 		return nil, err
 	}
+	if err := os.WriteFile(filepath.Join(stagingDir, "manifest.json"), manifestBytes, 0o644); err != nil {
+		return nil, err
+	}
+
+	// os.Rename of a directory is atomic on the same filesystem — the
+	// scan either exists in full or not at all from any reader's view.
+	if err := os.Rename(stagingDir, finalDir); err != nil {
+		return nil, err
+	}
+	committed = true
 
 	if err := l.touchCaseLocked(caseID); err != nil {
 		// Non-fatal: the scan is on disk, just couldn't bump the case mtime.
@@ -443,7 +513,7 @@ func (l *Library) listScansLocked(caseID string) ([]Scan, error) {
 	}
 	out := make([]Scan, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || isStagingDir(e.Name()) {
 			continue
 		}
 		s, err := l.readScanLocked(caseID, e.Name())
@@ -468,11 +538,19 @@ func (l *Library) countScansLocked(caseID string) (int, error) {
 	}
 	n := 0
 	for _, e := range entries {
-		if e.IsDir() {
+		if e.IsDir() && !isStagingDir(e.Name()) {
 			n++
 		}
 	}
 	return n, nil
+}
+
+// isStagingDir matches the ".staging-*" pattern produced by AddScan.
+// Such directories represent in-flight or orphaned (crashed) imports
+// and must be invisible to readers — only AddScan's own rename promotes
+// them into the case.
+func isStagingDir(name string) bool {
+	return len(name) > len(".staging-") && name[:len(".staging-")] == ".staging-"
 }
 
 // GetScan returns a scan by id.

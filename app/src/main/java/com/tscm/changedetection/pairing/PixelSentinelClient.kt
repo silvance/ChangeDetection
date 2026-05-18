@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 /**
  * Tiny PixelSentinel /api/v1 client used by the phone client to send
@@ -68,7 +69,9 @@ object PixelSentinelClient {
             val urlStr = buildString {
                 append(host)
                 append("/api/v1/import/pack")
-                if (!caseId.isNullOrBlank()) append("?caseId=").append(caseId)
+                if (!caseId.isNullOrBlank()) {
+                    append("?caseId=").append(URLEncoder.encode(caseId, "UTF-8"))
+                }
             }
             val conn = openConnection(urlStr, method = "POST", token = token).apply {
                 doOutput = true
